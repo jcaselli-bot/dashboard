@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildReport, dedupeContacts, getScheduleSnapshot } from "../src/report.js";
+import {
+  buildReport,
+  classifyServiceSegments,
+  dedupeContacts,
+  getScheduleSnapshot,
+  isOfflineAhoyConnectionContact,
+  recommendMapping,
+} from "../src/report.js";
 
 const mapping = {
   service: "service",
@@ -22,7 +29,7 @@ function contact(id, properties = {}, updatedAt = "2026-08-01T00:00:00.000Z") {
   };
 }
 
-test("keeps the duplicate with more complete scheduling data", () => {
+test("uses scheduling completeness when duplicate create dates tie", () => {
   const lessComplete = contact(1, { email:"lead@example.com", service:"Roofing" });
   const moreComplete = contact(2, {
     email:"LEAD@example.com",
@@ -38,6 +45,32 @@ test("keeps the duplicate with more complete scheduling data", () => {
   assert.equal(result.duplicatesRemoved, 1);
 });
 
+test("retains the oldest-created contact while using newer scheduling information", () => {
+  const oldest = contact(1, {
+    email:"lead@example.com",
+    service:"Roofing",
+    appointment_status:"NOT SCHEDULED",
+  }, "2026-07-02T00:00:00.000Z");
+  oldest.createdAt = "2026-07-01T00:00:00.000Z";
+  const newer = contact(2, {
+    email:"LEAD@example.com",
+    service:"Solar",
+    appointment_status:"SCHEDULED",
+    appointment_date:"2026-08-25T14:00:00.000Z",
+    appointment_type:"In-home quote",
+  }, "2026-08-10T00:00:00.000Z");
+  newer.createdAt = "2026-08-01T00:00:00.000Z";
+
+  const result = dedupeContacts([newer, oldest], mapping, { now:new Date("2026-08-19T12:00:00.000Z") });
+  assert.equal(result.records[0].id, "1");
+  assert.deepEqual(result.records[0].duplicateIds, ["2"]);
+  assert.equal(result.records[0].properties.appointment_status, "SCHEDULED");
+  assert.equal(result.records[0].properties.appointment_date, "2026-08-25T14:00:00.000Z");
+  assert.equal(result.records[0].properties.appointment_type, "In-home quote");
+  assert.equal(result.records[0].properties.service, "Solar");
+  assert.equal(result.records[0].createdAt, "2026-07-01T00:00:00.000Z");
+});
+
 test("joins duplicate chains connected by email or phone", () => {
   const first = contact(1, { email:"same@example.com", phone:"856-555-0101" });
   const second = contact(2, { email:"same@example.com", phone:"856-555-0199" });
@@ -48,23 +81,39 @@ test("joins duplicate chains connected by email or phone", () => {
   assert.equal(result.duplicatesRemoved, 2);
 });
 
-test("does not merge conflicting appointment fields into the chosen primary", () => {
+test("uses the most recently updated nonblank values for conflicting fields", () => {
   const primary = contact(1, {
     email:"same@example.com",
     appointment_status:"COMPLETED",
     appointment_date:"2026-08-10",
     service:"",
-  });
+  }, "2026-08-12T00:00:00.000Z");
   const secondary = contact(2, {
     email:"same@example.com",
     appointment_status:"CANCELED",
     appointment_date:"2026-08-11",
     service:"Solar",
-  });
+  }, "2026-08-15T00:00:00.000Z");
   const result = dedupeContacts([primary, secondary], mapping, { now:new Date("2026-08-19") });
-  assert.equal(result.records[0].properties.appointment_status, "COMPLETED");
-  assert.equal(result.records[0].properties.appointment_date, "2026-08-10");
+  assert.equal(result.records[0].properties.appointment_status, "CANCELED");
+  assert.equal(result.records[0].properties.appointment_date, "2026-08-11");
   assert.equal(result.records[0].properties.service, "Solar");
+});
+
+test("never lets a blank newer value erase usable older information", () => {
+  const older = contact(1, {
+    email:"same@example.com",
+    appointment_status:"SCHEDULED",
+    appointment_date:"2026-08-21",
+  }, "2026-08-10T00:00:00.000Z");
+  const newer = contact(2, {
+    email:"same@example.com",
+    appointment_status:"",
+    appointment_date:"",
+  }, "2026-08-15T00:00:00.000Z");
+  const result = dedupeContacts([older, newer], mapping, { now:new Date("2026-08-19") });
+  assert.equal(result.records[0].properties.appointment_status, "SCHEDULED");
+  assert.equal(result.records[0].properties.appointment_date, "2026-08-21");
 });
 
 test("normalizes common meeting outcomes", () => {
@@ -73,6 +122,49 @@ test("normalizes common meeting outcomes", () => {
   const snapshot = getScheduleSnapshot(record, mapping, new Date("2026-08-19"));
   assert.equal(snapshot.category, "No-show");
   assert.equal(snapshot.everScheduled, true);
+});
+
+test("normalizes Velocity appointment outcomes", () => {
+  for (const [status, category] of [["Sold","Completed"],["Sat","Completed"],["No Sit","No-show"],["Porched","No-show"],["DQ","Canceled"]]) {
+    const snapshot = getScheduleSnapshot(contact(1, { appointment_status:status, appointment_date:"2026-08-18" }), mapping, new Date("2026-08-19"));
+    assert.equal(snapshot.category, category, status);
+    assert.equal(snapshot.everScheduled, true, status);
+  }
+});
+
+test("classifies Roofing and Solar without duplicating the overall row", () => {
+  assert.deepEqual(classifyServiceSegments("Retail Roofing"), ["Roofing"]);
+  assert.deepEqual(classifyServiceSegments("Solar"), ["Solar"]);
+  assert.deepEqual(classifyServiceSegments("Roofing & Solar"), ["Roofing", "Solar"]);
+  assert.deepEqual(classifyServiceSegments("Unassigned"), []);
+});
+
+test("excludes only Offline Sources contacts whose drill-down is Ahoy-Connection", () => {
+  assert.equal(isOfflineAhoyConnectionContact(contact(1, { hs_analytics_source:"OFFLINE", hs_analytics_source_data_1:"Ahoy-Connection" })), true);
+  assert.equal(isOfflineAhoyConnectionContact(contact(2, { hs_analytics_source:"Offline Sources", hs_analytics_source_data_2:"ahoy connection" })), true);
+  assert.equal(isOfflineAhoyConnectionContact(contact(3, { hs_analytics_source:"PAID_SOCIAL", hs_analytics_source_data_1:"Ahoy-Connection" })), false);
+  assert.equal(isOfflineAhoyConnectionContact(contact(4, { hs_analytics_source:"OFFLINE", hs_analytics_source_data_1:"Trade show" })), false);
+});
+
+test("recommends Velocity's service and original traffic source fields", () => {
+  const properties = [
+    { name:"appointment_set_as", label:"Appointment Set As" },
+    { name:"appointment_status", label:"Appointment Status" },
+    { name:"appointment_date__time", label:"Appointment Date & Time", type:"datetime" },
+    { name:"appointment_type_2", label:"Appointment Type" },
+    { name:"hs_analytics_source", label:"Original Traffic Source" },
+    { name:"hs_analytics_source_data_1", label:"Original Traffic Source Drill-Down 1" },
+    { name:"hubspot_owner_id", label:"Contact owner" },
+  ];
+  assert.deepEqual(recommendMapping(properties), {
+    service:"appointment_set_as",
+    appointmentStatus:"appointment_status",
+    appointmentDate:"appointment_date__time",
+    appointmentType:"appointment_type_2",
+    leadSource:"hs_analytics_source",
+    leadSubsource:"hs_analytics_source_data_1",
+    owner:"hubspot_owner_id",
+  });
 });
 
 test("builds service and appointment totals after deduplication", () => {
@@ -90,5 +182,22 @@ test("builds service and appointment totals after deduplication", () => {
     ["Roofing",1,1],
     ["Solar",1,0],
   ]);
+  assert.deepEqual(report.serviceSegments.map((item) => [item.segment,item.leads,item.appointmentSet]), [
+    ["Roofing",1,1],
+    ["Solar",1,0],
+  ]);
 });
 
+test("counts combined Roofing and Solar leads in both without duplicating the overall total", () => {
+  const records = [
+    contact(1, { email:"roof@example.com", service:"Retail Roofing", source:"PAID_SEARCH" }),
+    contact(2, { email:"solar@example.com", service:"Solar", source:"PAID_SOCIAL" }),
+    contact(3, { email:"both@example.com", service:"Roofing & Solar", source:"REFERRALS" }),
+  ];
+  const report = buildReport(records, { mapping, now:new Date("2026-08-19") });
+  assert.equal(report.summary.uniqueLeads, 3);
+  assert.deepEqual(report.serviceSegments.map((item) => [item.segment,item.leads]), [["Roofing",2],["Solar",2]]);
+  assert.equal(report.rows.find((row) => row.id === "1").leadSource, "Paid Search");
+  assert.equal(report.rows.find((row) => row.id === "2").leadSource, "Paid Social");
+  assert.equal(report.rows.find((row) => row.id === "3").leadSource, "Referrals");
+});
