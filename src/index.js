@@ -1,5 +1,11 @@
 import { DASHBOARD_HTML, SETUP_HTML } from "./ui.js";
-import { buildReport, DEFAULT_MAPPING, isOfflineAhoyConnectionContact, recommendMapping } from "./report.js";
+import {
+  buildReport,
+  DEFAULT_MAPPING,
+  isOfflineAhoyConnectionContact,
+  recommendMapping,
+  recordCreatedInRange,
+} from "./report.js";
 import {
   addScheduleActivities,
   fetchContactProperties,
@@ -8,6 +14,8 @@ import {
   HubSpotError,
 } from "./hubspot.js";
 import { buildDemoData } from "./demo.js";
+
+const HUBSPOT_HISTORY_START = "1970-01-01T00:00:00.000Z";
 
 const SECURITY_HEADERS = {
   "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
@@ -105,19 +113,31 @@ function serializeProperties(properties) {
 }
 
 async function bootstrap(env) {
+  const warnings = [];
+  let savedSettings = null;
+  if (env.DASHBOARD_SETTINGS) {
+    try {
+      savedSettings = await readCloudSettings(env);
+    } catch {
+      warnings.push("Cloudflare settings could not be loaded, so this browser's saved mapping is being used.");
+    }
+  }
+
   const token = hubspotToken(env);
   if (!token) {
     return json({
       connected: false,
       demoMode: true,
+      settingsPersistenceConfigured: Boolean(env.DASHBOARD_SETTINGS),
+      savedSettings,
       properties: [],
       owners: [],
       recommendedMapping: DEFAULT_MAPPING,
       message: "HubSpot is not connected yet. Demo data is active until the private-app token is added.",
+      warnings,
     });
   }
 
-  const warnings = [];
   let properties = [];
   let owners = [];
   try {
@@ -134,6 +154,8 @@ async function bootstrap(env) {
         connected: true,
         schemaAccess: false,
         demoMode: false,
+        settingsPersistenceConfigured: Boolean(env.DASHBOARD_SETTINGS),
+        savedSettings,
         properties: [],
         owners: [],
         recommendedMapping: DEFAULT_MAPPING,
@@ -147,6 +169,8 @@ async function bootstrap(env) {
     connected: true,
     schemaAccess: true,
     demoMode: false,
+    settingsPersistenceConfigured: Boolean(env.DASHBOARD_SETTINGS),
+    savedSettings,
     properties: serializeProperties(properties),
     owners: owners.map((owner) => ({ id: String(owner.id), name: ownerMap([owner])[String(owner.id)] })),
     recommendedMapping: { ...DEFAULT_MAPPING, ...recommendMapping(properties) },
@@ -161,6 +185,41 @@ function parseMapping(mapping) {
     if (typeof value === "string" && value.length <= 200) output[key] = value.trim();
   }
   return output;
+}
+
+function parseDashboardSettings(settings) {
+  const scheduleSource = ["properties", "auto", "meetings", "appointments"].includes(settings?.scheduleSource)
+    ? settings.scheduleSource
+    : "auto";
+  const dedupeBy = ["email_phone", "email", "phone"].includes(settings?.dedupeBy)
+    ? settings.dedupeBy
+    : "email_phone";
+  return {
+    scheduleSource,
+    dedupeBy,
+    mapping: parseMapping(settings?.mapping),
+  };
+}
+
+function cloudSettingsStub(env) {
+  return env.DASHBOARD_SETTINGS?.getByName("velocity-dashboard");
+}
+
+async function readCloudSettings(env) {
+  const stub = cloudSettingsStub(env);
+  if (!stub) return null;
+  const stored = await stub.getSettings();
+  return stored ? parseDashboardSettings(stored) : null;
+}
+
+async function saveCloudSettings(request, env) {
+  const stub = cloudSettingsStub(env);
+  if (!stub) return json({ error: "Cloudflare settings storage is not configured." }, 503);
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (contentLength > 10000) return json({ error: "The settings request is too large." }, 413);
+  const settings = parseDashboardSettings(await request.json());
+  const stored = await stub.saveSettings(settings);
+  return json({ saved: true, settings: parseDashboardSettings(stored) });
 }
 
 function validateRange(start, end) {
@@ -202,12 +261,17 @@ async function liveReport(request, env) {
   if (ownerResult.status === "fulfilled") owners = ownerMap(ownerResult.value);
   else warnings.push("Owner names were unavailable; owner IDs are shown.");
 
-  const fetchedContacts = await fetchContacts(token, start, end, mapping);
+  const reportNow = new Date();
+  const fetchedContacts = await fetchContacts(token, HUBSPOT_HISTORY_START, end, mapping);
+  const fetchedRecordsInRange = fetchedContacts.filter((contact) => recordCreatedInRange(contact, start, end)).length;
   const contacts = fetchedContacts.filter((contact) => !isOfflineAhoyConnectionContact(contact));
-  const excludedAhoyConnection = fetchedContacts.length - contacts.length;
+  const excludedAhoyConnection = fetchedContacts.filter((contact) => (
+    recordCreatedInRange(contact, start, end) && isOfflineAhoyConnectionContact(contact)
+  )).length;
   if (excludedAhoyConnection) {
     warnings.push(`${excludedAhoyConnection} Offline Sources / Ahoy-Connection contact${excludedAhoyConnection === 1 ? "" : "s"} excluded before deduplication.`);
   }
+
   const activityResult = await addScheduleActivities(token, contacts, scheduleSource);
   warnings.push(...activityResult.warnings);
 
@@ -216,13 +280,16 @@ async function liveReport(request, env) {
     propertyDefinitions,
     owners,
     dedupeBy,
-    now: new Date(),
+    now: reportNow,
+    rangeStart: start,
+    rangeEnd: end,
   });
   return json({
     ...report,
     summary: {
       ...report.summary,
-      fetchedRecords: fetchedContacts.length,
+      fetchedRecords: fetchedRecordsInRange,
+      historyRecordsScanned: fetchedContacts.length,
       excludedAhoyConnection,
     },
     mode: "live",
@@ -251,6 +318,8 @@ async function demoReport(request) {
     owners: demo.owners,
     dedupeBy: body.dedupeBy || "email_phone",
     now: new Date(),
+    rangeStart: body.start || "",
+    rangeEnd: body.end || "",
   });
   return json({
     ...report,
@@ -280,6 +349,7 @@ export default {
         ok: true,
         authenticationConfigured: Boolean(env.DASHBOARD_PASSWORD) || env.ALLOW_UNAUTHENTICATED === "true",
         hubspotConfigured: Boolean(hubspotToken(env)),
+        settingsPersistenceConfigured: Boolean(env.DASHBOARD_SETTINGS),
       });
     }
 
@@ -288,9 +358,10 @@ export default {
     try {
       if (request.method === "GET" && url.pathname === "/") return html(DASHBOARD_HTML);
       if (request.method === "GET" && url.pathname === "/api/bootstrap") return bootstrap(env);
+      if (request.method === "PUT" && url.pathname === "/api/settings") return saveCloudSettings(request, env);
       if (request.method === "POST" && url.pathname === "/api/report") return liveReport(request, env);
       if (request.method === "POST" && url.pathname === "/api/demo") return demoReport(request);
-      if (request.method === "OPTIONS") return response("", 204, { Allow: "GET, POST, OPTIONS" });
+      if (request.method === "OPTIONS") return response("", 204, { Allow: "GET, POST, PUT, OPTIONS" });
       return json({ error: "Not found" }, 404);
     } catch (error) {
       return errorResponse(error);
