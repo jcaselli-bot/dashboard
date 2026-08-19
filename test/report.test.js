@@ -91,4 +91,4 @@ test("builds service and appointment totals after deduplication", () => {
     ["Solar",1,0],
   ]);
 });
-
+ 
