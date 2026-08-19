@@ -3,10 +3,12 @@ import {
   buildReport,
   DEFAULT_MAPPING,
   isOfflineAhoyConnectionContact,
+  isLeaderSourceContact,
   recommendMapping,
   recordCreatedInRange,
 } from "./report.js";
 import {
+  addContactPropertyHistory,
   addScheduleActivities,
   fetchContactProperties,
   fetchContacts,
@@ -16,6 +18,20 @@ import {
 import { buildDemoData } from "./demo.js";
 
 const HUBSPOT_HISTORY_START = "1970-01-01T00:00:00.000Z";
+
+function normalizedPropertyName(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function leaderSourcePropertyNames(properties, mapping) {
+  const names = [mapping.leadSource];
+  for (const property of properties || []) {
+    const normalizedName = normalizedPropertyName(property.name);
+    const normalizedLabel = normalizedPropertyName(property.label);
+    if (normalizedName === "leadsource" || normalizedLabel === "leadsource") names.push(property.name);
+  }
+  return [...new Set(names.filter(Boolean))];
+}
 
 const SECURITY_HEADERS = {
   "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
@@ -250,29 +266,60 @@ async function liveReport(request, env) {
     : "properties";
 
   let propertyDefinitions = {};
+  let contactProperties = [];
   let owners = {};
   const warnings = [];
   const [propertyResult, ownerResult] = await Promise.allSettled([
     fetchContactProperties(token),
     fetchOwners(token),
   ]);
-  if (propertyResult.status === "fulfilled") propertyDefinitions = propertyMap(propertyResult.value);
+  if (propertyResult.status === "fulfilled") {
+    contactProperties = propertyResult.value;
+    propertyDefinitions = propertyMap(propertyResult.value);
+  }
   else warnings.push("Property labels were unavailable; raw HubSpot values are shown.");
   if (ownerResult.status === "fulfilled") owners = ownerMap(ownerResult.value);
   else warnings.push("Owner names were unavailable; owner IDs are shown.");
 
   const reportNow = new Date();
-  const fetchedContacts = await fetchContacts(token, HUBSPOT_HISTORY_START, end, mapping);
+  const leaderSourceProperties = leaderSourcePropertyNames(contactProperties, mapping);
+  const fetchedContacts = await fetchContacts(token, HUBSPOT_HISTORY_START, end, mapping, leaderSourceProperties);
   const fetchedRecordsInRange = fetchedContacts.filter((contact) => recordCreatedInRange(contact, start, end)).length;
-  const contacts = fetchedContacts.filter((contact) => !isOfflineAhoyConnectionContact(contact));
-  const excludedAhoyConnection = fetchedContacts.filter((contact) => (
-    recordCreatedInRange(contact, start, end) && isOfflineAhoyConnectionContact(contact)
-  )).length;
-  if (excludedAhoyConnection) {
-    warnings.push(`${excludedAhoyConnection} Offline Sources / Ahoy-Connection contact${excludedAhoyConnection === 1 ? "" : "s"} excluded before deduplication.`);
+  const excludedAhoyContacts = fetchedContacts.filter((contact) => isOfflineAhoyConnectionContact(contact));
+  const afterAhoyFilter = fetchedContacts.filter((contact) => !isOfflineAhoyConnectionContact(contact));
+  const excludedLeaderContacts = afterAhoyFilter.filter((contact) => (
+    isLeaderSourceContact(contact, leaderSourceProperties, propertyDefinitions)
+  ));
+  const contacts = afterAhoyFilter.filter((contact) => (
+    !isLeaderSourceContact(contact, leaderSourceProperties, propertyDefinitions)
+  ));
+  const excludedAhoyConnection = excludedAhoyContacts.filter((contact) => recordCreatedInRange(contact, start, end)).length;
+  const excludedLeader = excludedLeaderContacts.filter((contact) => recordCreatedInRange(contact, start, end)).length;
+  if (excludedAhoyContacts.length) {
+    warnings.push(`${excludedAhoyContacts.length} Offline Sources / Ahoy-Connection contact${excludedAhoyContacts.length === 1 ? "" : "s"} excluded from scanned history before deduplication.`);
+  }
+  if (excludedLeaderContacts.length) {
+    warnings.push(`${excludedLeaderContacts.length} LEADer-source contact${excludedLeaderContacts.length === 1 ? "" : "s"} excluded from scanned history before deduplication.`);
   }
 
-  const activityResult = await addScheduleActivities(token, contacts, scheduleSource);
+  let bookingHistoryAvailable = true;
+  let bookingHistoryCounts = { requested: contacts.length, loaded: 0 };
+  const [historyOutcome, activityOutcome] = await Promise.allSettled([
+    addContactPropertyHistory(token, contacts, ["lifecyclestage"]),
+    addScheduleActivities(token, contacts, scheduleSource),
+  ]);
+  if (historyOutcome.status === "fulfilled") {
+    bookingHistoryCounts = historyOutcome.value;
+    if (bookingHistoryCounts.loaded !== bookingHistoryCounts.requested) {
+      bookingHistoryAvailable = false;
+      warnings.push("Some lifecycle-stage histories were unavailable, so appointment-booking totals may be incomplete.");
+    }
+  } else {
+    bookingHistoryAvailable = false;
+    warnings.push("Lifecycle-stage history was unavailable, so appointment-booking totals cannot be calculated for this refresh.");
+  }
+  if (activityOutcome.status === "rejected") throw activityOutcome.reason;
+  const activityResult = activityOutcome.value;
   warnings.push(...activityResult.warnings);
 
   const report = buildReport(contacts, {
@@ -283,6 +330,7 @@ async function liveReport(request, env) {
     now: reportNow,
     rangeStart: start,
     rangeEnd: end,
+    bookingHistoryAvailable,
   });
   return json({
     ...report,
@@ -291,12 +339,16 @@ async function liveReport(request, env) {
       fetchedRecords: fetchedRecordsInRange,
       historyRecordsScanned: fetchedContacts.length,
       excludedAhoyConnection,
+      excludedLeader,
+      excludedAhoyConnectionHistory: excludedAhoyContacts.length,
+      excludedLeaderHistory: excludedLeaderContacts.length,
     },
     mode: "live",
     range: { start, end },
     mapping,
     scheduleSource,
     activityCounts: activityResult.counts,
+    bookingHistoryCounts,
     warnings,
   });
 }
