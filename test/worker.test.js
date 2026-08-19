@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import worker from "../src/index.js";
+import { DASHBOARD_HTML } from "../src/ui.js";
 
 test("serves the dashboard and demo report without external credentials", async () => {
   const env = { ALLOW_UNAUTHENTICATED:"true" };
@@ -12,7 +13,7 @@ test("serves the dashboard and demo report without external credentials", async 
 
   const healthResponse = await worker.fetch(new Request("https://dashboard.test/api/health"), env, {});
   const health = await healthResponse.json();
-  assert.equal(health.hubspotConfigured, true);
+  assert.equal(health.hubspotConfigured, false);
 
   const reportResponse = await worker.fetch(new Request("https://dashboard.test/api/demo", {
     method:"POST",
@@ -24,6 +25,12 @@ test("serves the dashboard and demo report without external credentials", async 
   assert.equal(report.mode, "demo");
   assert.equal(report.summary.duplicatesRemoved, 3);
   assert.ok(report.summary.uniqueLeads > 30);
+});
+
+test("ships browser JavaScript that parses successfully", () => {
+  const match = DASHBOARD_HTML.match(/<script>([\s\S]*?)<\/script>/);
+  assert.ok(match, "dashboard inline script is present");
+  assert.doesNotThrow(() => new Function(match[1]));
 });
 
 test("fails closed when the dashboard password is not configured", async () => {
