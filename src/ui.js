@@ -126,9 +126,9 @@ export const DASHBOARD_HTML = `<!doctype html>
     .legend-dot { width:7px; height:7px; border-radius:2px; background:var(--cyan); }
     .legend-dot.orange { background:var(--orange); }
     .trend { height:245px; padding:14px 18px 20px; display:flex; align-items:flex-end; gap:5px; overflow:hidden; }
-    .day-group { min-width:5px; flex:1; height:100%; display:flex; align-items:flex-end; position:relative; border-bottom:1px solid var(--border); }
-    .day-leads { width:100%; min-height:2px; border-radius:4px 4px 1px 1px; background:linear-gradient(180deg, rgba(57,198,216,.82), rgba(57,198,216,.26)); position:relative; transition:height .25s ease; }
-    .day-appts { position:absolute; bottom:0; left:20%; width:60%; min-height:0; border-radius:3px 3px 0 0; background:var(--orange); box-shadow:0 0 14px rgba(255,138,31,.28); }
+    .day-group { min-width:5px; flex:1; height:100%; display:flex; align-items:flex-end; justify-content:center; gap:2px; position:relative; border-bottom:1px solid var(--border); }
+    .day-leads { width:44%; min-height:2px; border-radius:4px 4px 1px 1px; background:linear-gradient(180deg, rgba(57,198,216,.82), rgba(57,198,216,.26)); transition:height .25s ease; }
+    .day-appts { width:44%; min-height:2px; border-radius:3px 3px 0 0; background:var(--orange); box-shadow:0 0 14px rgba(255,138,31,.28); transition:height .25s ease; }
     .day-label { position:absolute; bottom:-18px; left:50%; transform:translateX(-50%); font-size:9px; color:var(--muted-2); white-space:nowrap; }
     .schedule-body { display:grid; grid-template-columns:150px 1fr; align-items:center; gap:12px; padding:18px; }
     .donut { width:136px; height:136px; border-radius:50%; display:grid; place-items:center; position:relative; background:conic-gradient(var(--border) 0 100%); }
@@ -302,10 +302,10 @@ export const DASHBOARD_HTML = `<!doctype html>
       <div class="banner-stack" id="banners"></div>
 
       <section class="kpis" id="kpis" aria-label="Lead summary">
-        <article class="kpi"><div class="kpi-label">Unique new leads</div><div class="kpi-value skeleton">000</div><div class="kpi-note">After duplicate removal</div></article>
-        <article class="kpi"><div class="kpi-label">Appointment set</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Ever reached an appointment</div></article>
-        <article class="kpi"><div class="kpi-label">Appointment rate</div><div class="kpi-value skeleton">00%</div><div class="kpi-note">Appointments ÷ unique leads</div></article>
-        <article class="kpi"><div class="kpi-label">Active scheduled</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Scheduled or rescheduled</div></article>
+        <article class="kpi"><div class="kpi-label">Unique new leads</div><div class="kpi-value skeleton">000</div><div class="kpi-note">After history-wide duplicate removal</div></article>
+        <article class="kpi"><div class="kpi-label">Appointments in range</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Based on actual appointment date</div></article>
+        <article class="kpi"><div class="kpi-label">New-lead appt. rate</div><div class="kpi-value skeleton">00%</div><div class="kpi-note">New leads that ever scheduled</div></article>
+        <article class="kpi"><div class="kpi-label">Active scheduled</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Active appointments in range</div></article>
         <article class="kpi"><div class="kpi-label">Duplicates removed</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Oldest contact retained</div></article>
       </section>
 
@@ -317,14 +317,14 @@ export const DASHBOARD_HTML = `<!doctype html>
       <section class="main-grid">
         <article class="panel">
           <div class="panel-head">
-            <div><h2 class="panel-title">New lead pace</h2><div class="panel-sub" id="trend-sub">Unique leads by creation date</div></div>
+            <div><h2 class="panel-title">New leads and appointments</h2><div class="panel-sub" id="trend-sub">Leads by original create date; appointments by appointment date</div></div>
             <div class="legend-inline"><span><i class="legend-dot"></i>Leads</span><span><i class="legend-dot orange"></i>Appointments</span></div>
           </div>
           <div class="trend" id="trend"><div class="empty">Loading trend…</div></div>
         </article>
         <article class="panel">
           <div class="panel-head">
-            <div><h2 class="panel-title">What happened next</h2><div class="panel-sub">Normalized scheduling outcomes</div></div>
+            <div><h2 class="panel-title">Appointments in range</h2><div class="panel-sub">Outcomes grouped by actual appointment date</div></div>
           </div>
           <div class="schedule-body">
             <div class="donut" id="donut"><div class="donut-center"><div class="donut-value" id="donut-value">—</div><div class="donut-label">leads</div></div></div>
@@ -359,7 +359,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 
       <section class="panel table-panel">
         <div class="panel-head">
-          <div><h2 class="panel-title">Deduplicated lead detail</h2><div class="panel-sub">One primary contact per normalized email or phone</div></div>
+          <div><h2 class="panel-title">Deduplicated new-lead detail</h2><div class="panel-sub">Original contacts created in range; appointment totals may also include older leads</div></div>
           <div class="panel-sub" id="updated-at">Not refreshed yet</div>
         </div>
         <div class="table-wrap">
@@ -393,7 +393,7 @@ export const DASHBOARD_HTML = `<!doctype html>
   <dialog id="settings-dialog">
     <form method="dialog" id="settings-form">
       <div class="modal-head">
-        <div><h2>HubSpot data mapping</h2><p>Map your account’s internal contact properties. The access token stays on the server and is never sent to this page.</p></div>
+        <div><h2>HubSpot data mapping</h2><p>Map your account’s internal contact properties. Your choices save with this dashboard on Cloudflare; the access token is never sent to this page.</p></div>
         <button class="btn icon subtle" value="cancel" aria-label="Close settings" type="submit">×</button>
       </div>
       <div class="modal-body">
@@ -423,7 +423,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 
         <section class="settings-section">
           <div class="settings-title">Duplicate decision rule</div>
-          <div class="rule-box"><strong>Within each duplicate group:</strong> retain the contact with the oldest create date. Exact create-date ties use scheduling completeness, then overall lead completeness. The retained dashboard row is enriched with the most recently updated nonblank details from every duplicate—including service and appointment fields—while blank values never erase existing data.</div>
+          <div class="rule-box"><strong>Before the selected start date is applied:</strong> group matching contacts across HubSpot history through the selected end date and retain the oldest create date. Exact create-date ties use scheduling completeness, then overall lead completeness. The retained dashboard row is enriched with the most recently updated nonblank details from every duplicate—including service and appointment fields—while blank values never erase existing data.</div>
         </section>
 
         <section class="settings-section">
@@ -458,7 +458,8 @@ export const DASHBOARD_HTML = `<!doctype html>
         filters:{ search:"", segment:"", status:"", source:"" },
         page:1,
         privacy:false,
-        preset:21
+        preset:21,
+        hasSavedSettings:false
       };
 
       var $ = function (selector) { return document.querySelector(selector); };
@@ -483,6 +484,7 @@ export const DASHBOARD_HTML = `<!doctype html>
               dedupeBy:saved.dedupeBy || "email_phone",
               mapping:Object.assign({}, state.settings.mapping, saved.mapping)
             };
+            state.hasSavedSettings = true;
           }
         } catch (_) {}
       }
@@ -523,7 +525,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 
       async function requestJson(path, options) {
         var controller = new AbortController();
-        var timeout = setTimeout(function () { controller.abort(); }, 45000);
+        var timeout = setTimeout(function () { controller.abort(); }, 90000);
         try {
           var response = await fetch(path, Object.assign({
             headers:{ "Content-Type":"application/json" },
@@ -558,8 +560,18 @@ export const DASHBOARD_HTML = `<!doctype html>
 
       function mergeRecommendedMapping() {
         var recommended = (state.bootstrap && state.bootstrap.recommendedMapping) || {};
-        var hasStored = Boolean(localStorage.getItem(STORAGE_KEY));
-        if (!hasStored) state.settings.mapping = Object.assign({}, state.settings.mapping, recommended);
+        if (!state.hasSavedSettings) state.settings.mapping = Object.assign({}, state.settings.mapping, recommended);
+      }
+
+      function applyStoredSettings(saved) {
+        if (!saved || !saved.mapping) return;
+        state.settings = {
+          scheduleSource:saved.scheduleSource || "auto",
+          dedupeBy:saved.dedupeBy || "email_phone",
+          mapping:Object.assign({}, state.settings.mapping, saved.mapping)
+        };
+        state.hasSavedSettings = true;
+        saveSettings();
       }
 
       function fillSettingsForm() {
@@ -573,7 +585,10 @@ export const DASHBOARD_HTML = `<!doctype html>
         $("#map-subsource").value = state.settings.mapping.leadSubsource || "";
         $("#map-owner").value = state.settings.mapping.owner || "";
         var connected = state.bootstrap && state.bootstrap.connected;
-        $("#settings-connection").textContent = connected ? "HubSpot connected · read only" : "Demo mode · HubSpot token not configured";
+        var cloudSaved = state.bootstrap && state.bootstrap.settingsPersistenceConfigured;
+        $("#settings-connection").textContent = connected
+          ? "HubSpot connected · " + (cloudSaved ? "settings save on Cloudflare" : "browser-only settings")
+          : "Demo mode · HubSpot token not configured";
       }
 
       function readSettingsForm() {
@@ -590,12 +605,24 @@ export const DASHBOARD_HTML = `<!doctype html>
             owner:$("#map-owner").value.trim()
           }
         };
+        state.hasSavedSettings = true;
         saveSettings();
+      }
+
+      async function saveSettingsToCloudflare() {
+        if (!state.bootstrap || !state.bootstrap.settingsPersistenceConfigured) return false;
+        await requestJson("/api/settings", { method:"PUT", body:JSON.stringify(state.settings) });
+        return true;
       }
 
       async function bootstrap() {
         state.bootstrap = await requestJson("/api/bootstrap");
+        var hadLocalSettings = state.hasSavedSettings;
+        applyStoredSettings(state.bootstrap.savedSettings);
         mergeRecommendedMapping();
+        if (state.bootstrap.settingsPersistenceConfigured && !state.bootstrap.savedSettings && hadLocalSettings) {
+          try { await saveSettingsToCloudflare(); } catch (_) {}
+        }
         populatePropertyOptions();
         fillSettingsForm();
         var pill = $("#connection-pill");
@@ -642,10 +669,9 @@ export const DASHBOARD_HTML = `<!doctype html>
         return row.leadSource || "Unknown source";
       }
 
-      function filteredRows() {
-        if (!state.report) return [];
+      function filterReportRows(rows) {
         var query = state.filters.search.toLowerCase();
-        return state.report.rows.filter(function (row) {
+        return (rows || []).filter(function (row) {
           var segments = rowSegments(row);
           var segmentMatch = !state.filters.segment
             || (state.filters.segment === "Unclassified" ? !segments.length : segments.indexOf(state.filters.segment) >= 0);
@@ -657,13 +683,20 @@ export const DASHBOARD_HTML = `<!doctype html>
         });
       }
 
-      function aggregate(rows) {
+      function filteredRows() {
+        return state.report ? filterReportRows(state.report.rows) : [];
+      }
+
+      function filteredAppointmentRows() {
+        return state.report ? filterReportRows(state.report.appointmentRows || []) : [];
+      }
+
+      function aggregate(rows, appointmentRows) {
         var statusCounts = {};
         var services = {};
         var sources = {};
         STATUS_ORDER.forEach(function (status) { statusCounts[status] = 0; });
         rows.forEach(function (row) {
-          statusCounts[row.scheduleCategory] = (statusCounts[row.scheduleCategory] || 0) + 1;
           var source = sourceForRow(row);
           sources[source] = (sources[source] || 0) + 1;
           if (!services[row.service]) services[row.service] = { service:row.service, leads:0, appointmentSet:0, scheduled:0, completed:0, canceledNoShow:0, notScheduled:0 };
@@ -675,22 +708,28 @@ export const DASHBOARD_HTML = `<!doctype html>
           if (row.scheduleCategory === "Canceled" || row.scheduleCategory === "No-show") service.canceledNoShow += 1;
           if (!row.everScheduled) service.notScheduled += 1;
         });
+        appointmentRows.forEach(function (row) {
+          statusCounts[row.scheduleCategory] = (statusCounts[row.scheduleCategory] || 0) + 1;
+        });
         return {
           total:rows.length,
-          appointmentSet:rows.filter(function (row) { return row.everScheduled; }).length,
-          activeScheduled:rows.filter(function (row) { return row.scheduleCategory === "Scheduled" || row.scheduleCategory === "Rescheduled"; }).length,
+          newLeadsEverScheduled:rows.filter(function (row) { return row.everScheduled; }).length,
+          appointmentSet:appointmentRows.length,
+          activeScheduled:appointmentRows.filter(function (row) { return row.scheduleCategory === "Scheduled" || row.scheduleCategory === "Rescheduled"; }).length,
           statuses:STATUS_ORDER.map(function (label) { return { label:label, count:statusCounts[label] || 0 }; }),
           services:Object.keys(services).map(function (key) { var item=services[key]; item.appointmentRate=item.leads ? item.appointmentSet/item.leads : 0; return item; }).sort(function (a,b) { return b.leads-a.leads || a.service.localeCompare(b.service); }),
           segments:["Roofing","Solar"].map(function (segment) {
             var segmentRows = rows.filter(function (row) { return rowSegments(row).indexOf(segment) >= 0; });
-            var appointmentSet = segmentRows.filter(function (row) { return row.everScheduled; }).length;
+            var segmentAppointments = appointmentRows.filter(function (row) { return rowSegments(row).indexOf(segment) >= 0; });
+            var appointmentSet = segmentAppointments.length;
+            var newLeadsEverScheduled = segmentRows.filter(function (row) { return row.everScheduled; }).length;
             return {
               segment:segment,
               leads:segmentRows.length,
               appointmentSet:appointmentSet,
-              appointmentRate:segmentRows.length ? appointmentSet / segmentRows.length : 0,
-              activeScheduled:segmentRows.filter(function (row) { return row.scheduleCategory === "Scheduled" || row.scheduleCategory === "Rescheduled"; }).length,
-              completed:segmentRows.filter(function (row) { return row.scheduleCategory === "Completed"; }).length
+              appointmentRate:segmentRows.length ? newLeadsEverScheduled / segmentRows.length : 0,
+              activeScheduled:segmentAppointments.filter(function (row) { return row.scheduleCategory === "Scheduled" || row.scheduleCategory === "Rescheduled"; }).length,
+              completed:segmentAppointments.filter(function (row) { return row.scheduleCategory === "Completed"; }).length
             };
           }),
           sources:Object.keys(sources).map(function (label) { return { label:label, count:sources[label] }; }).sort(function (a,b) { return b.count-a.count; })
@@ -712,10 +751,10 @@ export const DASHBOARD_HTML = `<!doctype html>
       function renderKpis(rows, metrics) {
         var duplicateCount = state.report ? state.report.summary.duplicatesRemoved : 0;
         var cards = [
-          { label:"Unique new leads", value:number.format(metrics.total), note:rows.length === state.report.rows.length ? "After duplicate removal" : "Matches current filters", glow:"rgba(57,198,216,.13)" },
-          { label:"Appointment set", value:number.format(metrics.appointmentSet), note:"Includes completed, canceled & no-show", glow:"rgba(255,138,31,.14)" },
-          { label:"Appointment rate", value:percent(metrics.total ? metrics.appointmentSet / metrics.total : 0), note:"Appointments ÷ unique leads", glow:"rgba(73,207,147,.13)" },
-          { label:"Active scheduled", value:number.format(metrics.activeScheduled), note:"Scheduled or rescheduled", glow:"rgba(157,140,255,.13)" },
+          { label:"Unique new leads", value:number.format(metrics.total), note:rows.length === state.report.rows.length ? "After history-wide duplicate removal" : "Matches current filters", glow:"rgba(57,198,216,.13)" },
+          { label:"Appointments in range", value:number.format(metrics.appointmentSet), note:"Based on actual appointment date", glow:"rgba(255,138,31,.14)" },
+          { label:"New-lead appt. rate", value:percent(metrics.total ? metrics.newLeadsEverScheduled / metrics.total : 0), note:"New leads that ever scheduled", glow:"rgba(73,207,147,.13)" },
+          { label:"Active scheduled", value:number.format(metrics.activeScheduled), note:"Active appointments in range", glow:"rgba(157,140,255,.13)" },
           { label:"Duplicates removed", value:number.format(duplicateCount), note:number.format(state.report.summary.duplicateGroups) + " duplicate groups overall", glow:"rgba(241,199,91,.12)" }
         ];
         $("#kpis").innerHTML = cards.map(function (card) {
@@ -730,15 +769,21 @@ export const DASHBOARD_HTML = `<!doctype html>
         }).join("");
       }
 
-      function trendData(rows) {
+      function trendData(rows, appointmentRows) {
         var start = new Date($("#start-date").value + "T00:00:00");
         var end = new Date($("#end-date").value + "T00:00:00");
         var map = {};
         rows.forEach(function (row) {
           var key = row.createdAt ? row.createdAt.slice(0,10) : "";
+          if (!key) return;
           if (!map[key]) map[key] = { leads:0, appointments:0 };
           map[key].leads += 1;
-          if (row.everScheduled) map[key].appointments += 1;
+        });
+        appointmentRows.forEach(function (row) {
+          var key = row.appointmentDate ? row.appointmentDate.slice(0,10) : "";
+          if (!key) return;
+          if (!map[key]) map[key] = { leads:0, appointments:0 };
+          map[key].appointments += 1;
         });
         var output = [];
         var cursor = new Date(start);
@@ -750,19 +795,19 @@ export const DASHBOARD_HTML = `<!doctype html>
         return output;
       }
 
-      function renderTrend(rows) {
-        var data = trendData(rows);
+      function renderTrend(rows, appointmentRows) {
+        var data = trendData(rows, appointmentRows);
         if (!data.length) { $("#trend").innerHTML = '<div class="empty">No dates in this range.</div>'; return; }
-        var max = Math.max.apply(null, data.map(function (item) { return item.leads; }).concat([1]));
+        var max = Math.max.apply(null, data.map(function (item) { return Math.max(item.leads, item.appointments); }).concat([1]));
         var labelEvery = Math.max(1, Math.ceil(data.length / 7));
         $("#trend").innerHTML = data.map(function (item, index) {
           var leadHeight = item.leads ? clamp((item.leads / max) * 100, 4, 100) : 1;
-          var appointmentHeight = item.leads ? clamp((item.appointments / item.leads) * 100, 0, 100) : 0;
+          var appointmentHeight = item.appointments ? clamp((item.appointments / max) * 100, 4, 100) : 1;
           var title = dateTime.format(item.date) + ": " + item.leads + " leads, " + item.appointments + " appointments";
           var label = index % labelEvery === 0 || index === data.length - 1 ? '<span class="day-label">' + escapeHtml(dateShort.format(item.date)) + '</span>' : "";
-          return '<div class="day-group" title="' + escapeHtml(title) + '"><div class="day-leads" style="height:' + leadHeight + '%"><div class="day-appts" style="height:' + appointmentHeight + '%"></div></div>' + label + '</div>';
+          return '<div class="day-group" title="' + escapeHtml(title) + '"><div class="day-leads" style="height:' + leadHeight + '%"></div><div class="day-appts" style="height:' + appointmentHeight + '%"></div>' + label + '</div>';
         }).join("");
-        $("#trend-sub").textContent = number.format(rows.length) + " unique leads across " + data.length + " days";
+        $("#trend-sub").textContent = number.format(rows.length) + " unique leads · " + number.format(appointmentRows.length) + " dated appointments";
       }
 
       function renderSchedule(metrics) {
@@ -875,10 +920,11 @@ export const DASHBOARD_HTML = `<!doctype html>
       function renderFiltered() {
         if (!state.report) return;
         var rows = filteredRows();
-        var metrics = aggregate(rows);
+        var appointmentRows = filteredAppointmentRows();
+        var metrics = aggregate(rows, appointmentRows);
         renderKpis(rows, metrics);
         renderSegmentCards(metrics.segments);
-        renderTrend(rows);
+        renderTrend(rows, appointmentRows);
         renderSchedule(metrics);
         renderServices(metrics.segments);
         renderSources(metrics.sources);
@@ -889,7 +935,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 
       function renderAll() {
         renderBanners();
-        setFilterOptions(state.report.rows);
+        setFilterOptions(state.report.rows.concat(state.report.appointmentRows || []));
         renderDuplicates();
         renderFiltered();
       }
@@ -922,7 +968,14 @@ export const DASHBOARD_HTML = `<!doctype html>
         });
         $("#refresh-btn").addEventListener("click", loadReport);
         $("#settings-btn").addEventListener("click", function () { fillSettingsForm(); $("#settings-dialog").showModal(); });
-        $("#save-settings").addEventListener("click", function () { readSettingsForm(); $("#settings-dialog").close(); loadReport(); });
+        $("#save-settings").addEventListener("click", async function () {
+          readSettingsForm();
+          $("#settings-dialog").close();
+          var saveError = null;
+          try { await saveSettingsToCloudflare(); } catch (error) { saveError = error; }
+          await loadReport();
+          if (saveError) showError("The mapping is saved in this browser, but Cloudflare could not save it: " + saveError.message);
+        });
         $("#privacy-btn").addEventListener("click", function () {
           state.privacy = !state.privacy;
           $("#shell").classList.toggle("privacy", state.privacy);
@@ -936,7 +989,7 @@ export const DASHBOARD_HTML = `<!doctype html>
           state.filters.source = "";
           $("#source-filter").value = "";
           state.page = 1;
-          setFilterOptions(filteredRows());
+          setFilterOptions(filteredRows().concat(filteredAppointmentRows()));
           renderFiltered();
         });
         $("#status-filter").addEventListener("change", function (event) { state.filters.status=event.target.value; state.page=1; renderFiltered(); });
