@@ -38,3 +38,36 @@ test("fails closed when the dashboard password is not configured", async () => {
   assert.equal(response.status, 503);
   assert.match(await response.text(), /Secure access needs one setting/);
 });
+
+test("persists validated dashboard settings through the Cloudflare storage binding", async () => {
+  let stored = null;
+  const env = {
+    ALLOW_UNAUTHENTICATED:"true",
+    DASHBOARD_SETTINGS:{
+      getByName() {
+        return {
+          async getSettings() { return stored; },
+          async saveSettings(settings) { stored = settings; return stored; },
+        };
+      },
+    },
+  };
+  const saveResponse = await worker.fetch(new Request("https://dashboard.test/api/settings", {
+    method:"PUT",
+    headers:{ "content-type":"application/json" },
+    body:JSON.stringify({
+      scheduleSource:"properties",
+      dedupeBy:"email",
+      mapping:{ service:"appointment_set_as", appointmentStatus:"appointment_status" },
+    }),
+  }), env, {});
+  assert.equal(saveResponse.status, 200);
+  assert.equal(stored.scheduleSource, "properties");
+  assert.equal(stored.dedupeBy, "email");
+  assert.equal(stored.mapping.service, "appointment_set_as");
+
+  const bootstrapResponse = await worker.fetch(new Request("https://dashboard.test/api/bootstrap"), env, {});
+  const bootstrap = await bootstrapResponse.json();
+  assert.equal(bootstrap.settingsPersistenceConfigured, true);
+  assert.equal(bootstrap.savedSettings.mapping.appointmentStatus, "appointment_status");
+});
