@@ -8,7 +8,6 @@ import {
   HubSpotError,
 } from "./hubspot.js";
 import { buildDemoData } from "./demo.js";
-import { EMBEDDED_HUBSPOT_ACCESS_TOKEN } from "./embedded-credentials.js";
 
 const SECURITY_HEADERS = {
   "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
@@ -91,8 +90,7 @@ function propertyMap(properties) {
 }
 
 function hubspotToken(env) {
-  if (env.DISABLE_EMBEDDED_TOKEN === "true") return "";
-  return env.HUBSPOT_ACCESS_TOKEN || EMBEDDED_HUBSPOT_ACCESS_TOKEN;
+  return env.HUBSPOT_ACCESS_TOKEN || "";
 }
 
 function serializeProperties(properties) {
