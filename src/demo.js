@@ -18,6 +18,7 @@ export function buildDemoData(now = new Date()) {
     const last = LAST_NAMES[(index * 5) % LAST_NAMES.length];
     const createdAt = isoDaysAgo(now, index % 21, 11 + (index % 7));
     const status = STATUSES[index % STATUSES.length];
+    const booked = Boolean(status);
     const service = SERVICES[(index * 3) % SERVICES.length];
     const phoneNumber = `856555${String(1000 + index).slice(-4)}`;
     const record = {
@@ -35,8 +36,15 @@ export function buildDemoData(now = new Date()) {
         appointment_status: index % 4 === 0 ? status : "",
         appointment_date: index % 4 === 0 && status ? isoDaysAgo(now, -(index % 6), 18) : "",
         appointment_type: index % 4 === 0 && status ? "In-home consultation" : "",
+        lifecyclestage: booked ? "appointment_set" : "lead",
         hs_analytics_source: SOURCES[index % SOURCES.length],
         hubspot_owner_id: String(100 + (index % 4)),
+      },
+      propertiesWithHistory: {
+        lifecyclestage: [
+          { value:"lead", timestamp:createdAt, sourceType:"CRM_UI" },
+          ...(booked ? [{ value:"appointment_set", timestamp:isoDaysAgo(now, Math.max(0, (index % 21) - 1), 16), sourceType:"CRM_UI" }] : []),
+        ],
       },
       scheduleItems: index % 4 !== 0 && status ? [{
         id: `meeting-${index}`,
@@ -64,6 +72,13 @@ export function buildDemoData(now = new Date()) {
         appointment_status: "SCHEDULED",
         appointment_date: isoDaysAgo(now, -(duplicateIndex + 1), 19),
         appointment_type: "In-home consultation",
+        lifecyclestage: "appointment_set",
+      },
+      propertiesWithHistory: {
+        lifecyclestage: [
+          ...(source.propertiesWithHistory?.lifecyclestage || []),
+          { value:"appointment_set", timestamp:isoDaysAgo(now, 0, 17 + duplicateIndex), sourceType:"CRM_UI" },
+        ],
       },
       scheduleItems: [{
         id: `appointment-duplicate-${duplicateIndex}`,
@@ -85,6 +100,10 @@ export function buildDemoData(now = new Date()) {
       appointment_date: { name: "appointment_date", label: "Appointment date", type: "datetime", options: [] },
       appointment_type: { name: "appointment_type", label: "Appointment type", type: "enumeration", options: [] },
       hs_analytics_source: { name: "hs_analytics_source", label: "Original source", type: "enumeration", options: [] },
+      lifecyclestage: { name: "lifecyclestage", label: "Lifecycle stage", type: "enumeration", options: [
+        { label:"Lead", value:"lead" },
+        { label:"Appointment Set", value:"appointment_set" },
+      ] },
       hubspot_owner_id: { name: "hubspot_owner_id", label: "Contact owner", type: "enumeration", options: [] },
     },
     owners: {
