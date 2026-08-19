@@ -103,6 +103,19 @@ export const DASHBOARD_HTML = `<!doctype html>
     .kpi-label { color:var(--muted); font-size:12px; display:flex; justify-content:space-between; gap:10px; }
     .kpi-value { margin-top:17px; font-size:32px; line-height:1; font-weight:800; letter-spacing:-.045em; }
     .kpi-note { color:var(--muted-2); margin-top:10px; font-size:11px; }
+    .segment-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
+    .segment-card { position:relative; overflow:hidden; padding:20px; border:1px solid var(--border-soft); border-radius:var(--radius); background:linear-gradient(145deg, rgba(16,31,50,.98), rgba(9,23,39,.96)); }
+    .segment-card::after { content:""; position:absolute; width:170px; height:170px; right:-68px; top:-92px; border-radius:50%; background:var(--segment-glow); filter:blur(6px); }
+    .segment-card.roofing { --segment-accent:var(--orange); --segment-glow:rgba(255,138,31,.16); }
+    .segment-card.solar { --segment-accent:var(--cyan); --segment-glow:rgba(57,198,216,.14); }
+    .segment-head { position:relative; z-index:1; display:flex; align-items:center; justify-content:space-between; gap:14px; }
+    .segment-name { display:flex; align-items:center; gap:9px; font-size:15px; font-weight:800; }
+    .segment-name::before { content:""; width:9px; height:9px; border-radius:3px; background:var(--segment-accent); box-shadow:0 0 18px var(--segment-accent); }
+    .segment-rate { color:var(--segment-accent); font-size:24px; font-weight:850; letter-spacing:-.04em; }
+    .segment-stats { position:relative; z-index:1; display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:18px; }
+    .segment-stat { padding:12px; border:1px solid var(--border-soft); border-radius:12px; background:rgba(6,17,30,.46); }
+    .segment-stat strong { display:block; font-size:22px; letter-spacing:-.035em; }
+    .segment-stat span { display:block; color:var(--muted-2); font-size:10px; margin-top:5px; }
     .main-grid { display:grid; grid-template-columns:minmax(0, 1.65fr) minmax(320px, .85fr); gap:12px; margin-bottom:12px; }
     .panel { border:1px solid var(--border-soft); border-radius:var(--radius); background:linear-gradient(150deg, rgba(16,31,50,.97), rgba(10,24,40,.96)); box-shadow:0 15px 50px rgba(0,0,0,.14); min-width:0; }
     .panel-head { min-height:66px; padding:16px 18px 12px; display:flex; justify-content:space-between; align-items:flex-start; gap:18px; }
@@ -227,6 +240,7 @@ export const DASHBOARD_HTML = `<!doctype html>
       .date-row { flex-wrap:wrap; }
       .date-input { flex:1; min-width:120px; }
       .kpis { grid-template-columns:1fr 1fr; }
+      .segment-grid { grid-template-columns:1fr; }
       .kpi { min-height:116px; }
       .schedule-body { grid-template-columns:1fr; justify-items:center; }
       .status-list { width:100%; }
@@ -292,7 +306,12 @@ export const DASHBOARD_HTML = `<!doctype html>
         <article class="kpi"><div class="kpi-label">Appointment set</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Ever reached an appointment</div></article>
         <article class="kpi"><div class="kpi-label">Appointment rate</div><div class="kpi-value skeleton">00%</div><div class="kpi-note">Appointments ÷ unique leads</div></article>
         <article class="kpi"><div class="kpi-label">Active scheduled</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Scheduled or rescheduled</div></article>
-        <article class="kpi"><div class="kpi-label">Duplicates removed</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Primary record kept by schedule data</div></article>
+        <article class="kpi"><div class="kpi-label">Duplicates removed</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Oldest contact retained</div></article>
+      </section>
+
+      <section class="segment-grid" id="segment-cards" aria-label="Roofing and solar performance">
+        <article class="segment-card roofing"><div class="segment-head"><div class="segment-name">Roofing</div><div class="segment-rate skeleton">00%</div></div><div class="segment-stats"><div class="segment-stat"><strong class="skeleton">000</strong><span>Unique leads</span></div><div class="segment-stat"><strong class="skeleton">000</strong><span>Appointments</span></div><div class="segment-stat"><strong class="skeleton">000</strong><span>Active scheduled</span></div></div></article>
+        <article class="segment-card solar"><div class="segment-head"><div class="segment-name">Solar</div><div class="segment-rate skeleton">00%</div></div><div class="segment-stats"><div class="segment-stat"><strong class="skeleton">000</strong><span>Unique leads</span></div><div class="segment-stat"><strong class="skeleton">000</strong><span>Appointments</span></div><div class="segment-stat"><strong class="skeleton">000</strong><span>Active scheduled</span></div></div></article>
       </section>
 
       <section class="main-grid">
@@ -316,7 +335,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 
       <section class="panel filters" aria-label="Report filters">
         <div class="search"><span class="search-icon">⌕</span><input class="control" id="search" type="search" placeholder="Search name, email, phone, service…"></div>
-        <select class="control" id="service-filter" aria-label="Filter by service"><option value="">All services</option></select>
+        <select class="control" id="segment-filter" aria-label="Filter by business line"><option value="">Roofing + Solar</option><option value="Roofing">Roofing only</option><option value="Solar">Solar only</option><option value="Unclassified">Unclassified</option></select>
         <select class="control" id="status-filter" aria-label="Filter by scheduling status"><option value="">All scheduling outcomes</option></select>
         <select class="control" id="source-filter" aria-label="Filter by lead source"><option value="">All sources</option></select>
         <span class="count-chip" id="filtered-count">—</span>
@@ -326,7 +345,7 @@ export const DASHBOARD_HTML = `<!doctype html>
       <section class="breakdown-grid">
         <article class="panel">
           <div class="panel-head">
-            <div><h2 class="panel-title">Performance by service</h2><div class="panel-sub">Unique leads and appointment conversion</div></div>
+            <div><h2 class="panel-title">Roofing vs. solar</h2><div class="panel-sub">Combined-service leads appear in both business lines; overall totals remain deduplicated</div></div>
           </div>
           <div class="table-wrap" id="service-breakdown"></div>
         </article>
@@ -404,7 +423,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 
         <section class="settings-section">
           <div class="settings-title">Duplicate decision rule</div>
-          <div class="rule-box"><strong>Within each duplicate group:</strong> keep the contact with the most complete scheduling record. If scheduling is tied, keep the contact with more usable lead data, then the most recently updated contact. Blank non-scheduling fields can be filled from a suppressed duplicate, but conflicting appointment fields are never combined.</div>
+          <div class="rule-box"><strong>Within each duplicate group:</strong> retain the contact with the oldest create date. Exact create-date ties use scheduling completeness, then overall lead completeness. The retained dashboard row is enriched with the most recently updated nonblank details from every duplicate—including service and appointment fields—while blank values never erase existing data.</div>
         </section>
 
         <section class="settings-section">
@@ -426,7 +445,7 @@ export const DASHBOARD_HTML = `<!doctype html>
         "Scheduled":"#39c6d8", "Rescheduled":"#9d8cff", "Completed":"#49cf93",
         "Canceled":"#ff6f72", "No-show":"#f1c75b", "Other / review":"#ffad5e", "Not scheduled":"#405772"
       };
-      var STORAGE_KEY = "velocity-lead-dashboard-settings-v1";
+      var STORAGE_KEY = "velocity-lead-dashboard-settings-v2";
       var PAGE_SIZE = 25;
       var state = {
         bootstrap:null,
@@ -434,9 +453,9 @@ export const DASHBOARD_HTML = `<!doctype html>
         settings:{
           scheduleSource:"auto",
           dedupeBy:"email_phone",
-          mapping:{ service:"", appointmentStatus:"", appointmentDate:"", appointmentType:"", leadSource:"hs_analytics_source", leadSubsource:"hs_analytics_source_data_1", owner:"hubspot_owner_id" }
+          mapping:{ service:"appointment_set_as", appointmentStatus:"appointment_status", appointmentDate:"appointment_date__time", appointmentType:"appointment_type_2", leadSource:"hs_analytics_source", leadSubsource:"hs_analytics_source_data_1", owner:"hubspot_owner_id" }
         },
-        filters:{ search:"", service:"", status:"", source:"" },
+        filters:{ search:"", segment:"", status:"", source:"" },
         page:1,
         privacy:false,
         preset:21
@@ -599,8 +618,9 @@ export const DASHBOARD_HTML = `<!doctype html>
           var path = state.bootstrap && state.bootstrap.connected ? "/api/report" : "/api/demo";
           state.report = await requestJson(path, { method:"POST", body:JSON.stringify(body) });
           state.page = 1;
-          state.filters = { search:"", service:"", status:"", source:"" };
+          state.filters = { search:"", segment:"", status:"", source:"" };
           $("#search").value = "";
+          $("#segment-filter").value = "";
           renderAll();
         } catch (error) {
           showError(error.message);
@@ -609,15 +629,31 @@ export const DASHBOARD_HTML = `<!doctype html>
         }
       }
 
+      function rowSegments(row) {
+        if (Array.isArray(row.serviceSegments)) return row.serviceSegments;
+        var service = String(row.service || "").toLowerCase();
+        var segments = [];
+        if (/roof|shingle|storm|insurance/.test(service)) segments.push("Roofing");
+        if (/solar|photovoltaic|\\bpv\\b/.test(service)) segments.push("Solar");
+        return segments;
+      }
+
+      function sourceForRow(row) {
+        return row.leadSource || "Unknown source";
+      }
+
       function filteredRows() {
         if (!state.report) return [];
         var query = state.filters.search.toLowerCase();
         return state.report.rows.filter(function (row) {
+          var segments = rowSegments(row);
+          var segmentMatch = !state.filters.segment
+            || (state.filters.segment === "Unclassified" ? !segments.length : segments.indexOf(state.filters.segment) >= 0);
           var haystack = [row.name,row.email,row.phone,row.service,row.leadSource,row.owner,row.rawScheduleStatus].join(" ").toLowerCase();
           return (!query || haystack.indexOf(query) >= 0)
-            && (!state.filters.service || row.service === state.filters.service)
+            && segmentMatch
             && (!state.filters.status || row.scheduleCategory === state.filters.status)
-            && (!state.filters.source || row.leadSource === state.filters.source);
+            && (!state.filters.source || sourceForRow(row) === state.filters.source);
         });
       }
 
@@ -628,7 +664,8 @@ export const DASHBOARD_HTML = `<!doctype html>
         STATUS_ORDER.forEach(function (status) { statusCounts[status] = 0; });
         rows.forEach(function (row) {
           statusCounts[row.scheduleCategory] = (statusCounts[row.scheduleCategory] || 0) + 1;
-          sources[row.leadSource] = (sources[row.leadSource] || 0) + 1;
+          var source = sourceForRow(row);
+          sources[source] = (sources[source] || 0) + 1;
           if (!services[row.service]) services[row.service] = { service:row.service, leads:0, appointmentSet:0, scheduled:0, completed:0, canceledNoShow:0, notScheduled:0 };
           var service = services[row.service];
           service.leads += 1;
@@ -644,6 +681,18 @@ export const DASHBOARD_HTML = `<!doctype html>
           activeScheduled:rows.filter(function (row) { return row.scheduleCategory === "Scheduled" || row.scheduleCategory === "Rescheduled"; }).length,
           statuses:STATUS_ORDER.map(function (label) { return { label:label, count:statusCounts[label] || 0 }; }),
           services:Object.keys(services).map(function (key) { var item=services[key]; item.appointmentRate=item.leads ? item.appointmentSet/item.leads : 0; return item; }).sort(function (a,b) { return b.leads-a.leads || a.service.localeCompare(b.service); }),
+          segments:["Roofing","Solar"].map(function (segment) {
+            var segmentRows = rows.filter(function (row) { return rowSegments(row).indexOf(segment) >= 0; });
+            var appointmentSet = segmentRows.filter(function (row) { return row.everScheduled; }).length;
+            return {
+              segment:segment,
+              leads:segmentRows.length,
+              appointmentSet:appointmentSet,
+              appointmentRate:segmentRows.length ? appointmentSet / segmentRows.length : 0,
+              activeScheduled:segmentRows.filter(function (row) { return row.scheduleCategory === "Scheduled" || row.scheduleCategory === "Rescheduled"; }).length,
+              completed:segmentRows.filter(function (row) { return row.scheduleCategory === "Completed"; }).length
+            };
+          }),
           sources:Object.keys(sources).map(function (label) { return { label:label, count:sources[label] }; }).sort(function (a,b) { return b.count-a.count; })
         };
       }
@@ -671,6 +720,13 @@ export const DASHBOARD_HTML = `<!doctype html>
         ];
         $("#kpis").innerHTML = cards.map(function (card) {
           return '<article class="kpi" style="--kpi-glow:' + card.glow + '"><div class="kpi-label"><span>' + escapeHtml(card.label) + '</span></div><div class="kpi-value">' + escapeHtml(card.value) + '</div><div class="kpi-note">' + escapeHtml(card.note) + '</div></article>';
+        }).join("");
+      }
+
+      function renderSegmentCards(segments) {
+        $("#segment-cards").innerHTML = segments.map(function (item) {
+          var className = item.segment.toLowerCase();
+          return '<article class="segment-card ' + className + '"><div class="segment-head"><div class="segment-name">' + escapeHtml(item.segment) + '</div><div class="segment-rate">' + percent(item.appointmentRate) + '</div></div><div class="segment-stats"><div class="segment-stat"><strong>' + number.format(item.leads) + '</strong><span>Unique leads</span></div><div class="segment-stat"><strong>' + number.format(item.appointmentSet) + '</strong><span>Appointments</span></div><div class="segment-stat"><strong>' + number.format(item.activeScheduled) + '</strong><span>Active scheduled</span></div></div></article>';
         }).join("");
       }
 
@@ -726,11 +782,11 @@ export const DASHBOARD_HTML = `<!doctype html>
         }).join("");
       }
 
-      function renderServices(services) {
-        if (!services.length) { $("#service-breakdown").innerHTML = '<div class="empty">No service data matches the current filters.</div>'; return; }
-        var max = Math.max.apply(null, services.map(function (item) { return item.leads; }));
-        $("#service-breakdown").innerHTML = '<table class="service-table"><thead><tr><th>Service</th><th>Leads</th><th>Appt. set</th><th>Active</th><th>Completed</th><th>Rate</th></tr></thead><tbody>' + services.map(function (item) {
-          return '<tr><td class="service-name"><strong>' + escapeHtml(item.service) + '</strong><div class="mini-bar"><span style="width:' + clamp(item.leads / max * 100, 2, 100) + '%"></span></div></td><td>' + number.format(item.leads) + '</td><td>' + number.format(item.appointmentSet) + '</td><td>' + number.format(item.scheduled) + '</td><td>' + number.format(item.completed) + '</td><td class="rate">' + percent(item.appointmentRate) + '</td></tr>';
+      function renderServices(segments) {
+        if (!segments.length) { $("#service-breakdown").innerHTML = '<div class="empty">No Roofing or Solar data matches the current filters.</div>'; return; }
+        var max = Math.max.apply(null, segments.map(function (item) { return item.leads; }).concat([1]));
+        $("#service-breakdown").innerHTML = '<table class="service-table"><thead><tr><th>Business line</th><th>Leads</th><th>Appt. set</th><th>Active</th><th>Completed</th><th>Rate</th></tr></thead><tbody>' + segments.map(function (item) {
+          return '<tr><td class="service-name"><strong>' + escapeHtml(item.segment) + '</strong><div class="mini-bar"><span style="width:' + clamp(item.leads / max * 100, item.leads ? 2 : 0, 100) + '%"></span></div></td><td>' + number.format(item.leads) + '</td><td>' + number.format(item.appointmentSet) + '</td><td>' + number.format(item.activeScheduled) + '</td><td>' + number.format(item.completed) + '</td><td class="rate">' + percent(item.appointmentRate) + '</td></tr>';
         }).join("") + '</tbody></table>';
       }
 
@@ -769,7 +825,8 @@ export const DASHBOARD_HTML = `<!doctype html>
             var duplicate = row.duplicateCount ? '<div class="duplicate-tag">' + row.duplicateCount + ' duplicate record' + (row.duplicateCount === 1 ? '' : 's') + ' suppressed</div>' : "";
             var appointmentMain = row.appointmentDate ? dateTime.format(new Date(row.appointmentDate)) : (row.rawScheduleStatus || "No appointment date");
             var appointmentSub = [row.appointmentType, row.scheduleSource].filter(Boolean).join(" · ");
-            return '<tr><td><div class="lead-main personal">' + escapeHtml(contact.name) + '</div><div class="lead-contact personal">' + contactLine + '</div>' + duplicate + '</td><td><span class="badge">' + escapeHtml(row.service) + '</span></td><td><span class="badge ' + statusClass(row.scheduleCategory) + '">' + escapeHtml(row.scheduleCategory) + '</span><div class="appointment-sub">' + escapeHtml(row.rawScheduleStatus || "") + '</div></td><td><div class="appointment-main">' + escapeHtml(appointmentMain) + '</div><div class="appointment-sub">' + escapeHtml(appointmentSub) + '</div></td><td><div>' + escapeHtml(row.leadSource) + '</div><div class="appointment-sub">' + escapeHtml(row.leadSubsource || "") + '</div></td><td>' + escapeHtml(row.owner) + '</td><td>' + escapeHtml(row.createdAt ? dateShort.format(new Date(row.createdAt)) : "—") + '</td></tr>';
+            var segmentLabel = rowSegments(row).join(" + ") || "Unclassified";
+            return '<tr><td><div class="lead-main personal">' + escapeHtml(contact.name) + '</div><div class="lead-contact personal">' + contactLine + '</div>' + duplicate + '</td><td><span class="badge">' + escapeHtml(segmentLabel) + '</span><div class="appointment-sub">' + escapeHtml(row.service) + '</div></td><td><span class="badge ' + statusClass(row.scheduleCategory) + '">' + escapeHtml(row.scheduleCategory) + '</span><div class="appointment-sub">' + escapeHtml(row.rawScheduleStatus || "") + '</div></td><td><div class="appointment-main">' + escapeHtml(appointmentMain) + '</div><div class="appointment-sub">' + escapeHtml(appointmentSub) + '</div></td><td><div>' + escapeHtml(sourceForRow(row)) + '</div><div class="appointment-sub">' + escapeHtml(row.leadSubsource || "") + '</div></td><td>' + escapeHtml(row.owner) + '</td><td>' + escapeHtml(row.createdAt ? dateShort.format(new Date(row.createdAt)) : "—") + '</td></tr>';
           }).join("");
         }
         var first = rows.length ? start + 1 : 0;
@@ -782,7 +839,7 @@ export const DASHBOARD_HTML = `<!doctype html>
       function renderQuality(rows) {
         var quality = [
           { value:rows.filter(function (row) { return !row.email && !row.phone; }).length, label:"No email or phone" },
-          { value:rows.filter(function (row) { return row.service === "Unassigned service"; }).length, label:"Service not assigned" },
+          { value:rows.filter(function (row) { return !rowSegments(row).length; }).length, label:"Not classified as Roofing or Solar" },
           { value:rows.filter(function (row) { return row.scheduleCategory === "Other / review"; }).length, label:"Scheduling status needs review" }
         ];
         $("#quality-grid").innerHTML = quality.map(function (item) { return '<div class="quality-card"><div class="quality-value">' + number.format(item.value) + '</div><div class="quality-label">' + escapeHtml(item.label) + '</div></div>'; }).join("");
@@ -804,9 +861,8 @@ export const DASHBOARD_HTML = `<!doctype html>
           $(id).innerHTML = '<option value="">' + escapeHtml(firstLabel) + '</option>' + unique.map(function (value) { return '<option value="' + escapeHtml(value) + '">' + escapeHtml(value) + '</option>'; }).join("");
           if (unique.indexOf(current) >= 0) $(id).value = current;
         }
-        options("#service-filter", rows.map(function (row) { return row.service; }), "All services");
         options("#status-filter", STATUS_ORDER, "All scheduling outcomes");
-        options("#source-filter", rows.map(function (row) { return row.leadSource; }), "All sources");
+        options("#source-filter", rows.map(sourceForRow), "All sources");
       }
 
       function renderMeta(rows) {
@@ -821,9 +877,10 @@ export const DASHBOARD_HTML = `<!doctype html>
         var rows = filteredRows();
         var metrics = aggregate(rows);
         renderKpis(rows, metrics);
+        renderSegmentCards(metrics.segments);
         renderTrend(rows);
         renderSchedule(metrics);
-        renderServices(metrics.services);
+        renderServices(metrics.segments);
         renderSources(metrics.sources);
         renderRows(rows);
         renderQuality(rows);
@@ -844,11 +901,11 @@ export const DASHBOARD_HTML = `<!doctype html>
 
       function exportCsv() {
         var rows = filteredRows();
-        var header = ["HubSpot ID","Name","Email","Phone","Service","Scheduling outcome","Raw scheduling status","Appointment date","Appointment type","Scheduling source","Lead source","Lead source detail","Owner","Created","Duplicates suppressed"];
+        var header = ["HubSpot ID","Name","Email","Phone","Business line","Raw service","Scheduling outcome","Raw scheduling status","Appointment date","Appointment type","Scheduling source","Lead source","Lead source detail","Owner","Created","Duplicates suppressed"];
         var lines = [header.map(csvCell).join(",")];
         rows.forEach(function (row) {
           var contact = displayContact(row);
-          lines.push([row.id,contact.name,contact.email,contact.phone,row.service,row.scheduleCategory,row.rawScheduleStatus,row.appointmentDate,row.appointmentType,row.scheduleSource,row.leadSource,row.leadSubsource,row.owner,row.createdAt,row.duplicateCount].map(csvCell).join(","));
+          lines.push([row.id,contact.name,contact.email,contact.phone,rowSegments(row).join(" + ") || "Unclassified",row.service,row.scheduleCategory,row.rawScheduleStatus,row.appointmentDate,row.appointmentType,row.scheduleSource,sourceForRow(row),row.leadSubsource,row.owner,row.createdAt,row.duplicateCount].map(csvCell).join(","));
         });
         var blob = new Blob(["\ufeff" + lines.join("\\r\\n")], { type:"text/csv;charset=utf-8" });
         var url = URL.createObjectURL(blob);
@@ -874,7 +931,14 @@ export const DASHBOARD_HTML = `<!doctype html>
           renderDuplicates();
         });
         $("#search").addEventListener("input", function (event) { state.filters.search=event.target.value; state.page=1; renderFiltered(); });
-        $("#service-filter").addEventListener("change", function (event) { state.filters.service=event.target.value; state.page=1; renderFiltered(); });
+        $("#segment-filter").addEventListener("change", function (event) {
+          state.filters.segment = event.target.value;
+          state.filters.source = "";
+          $("#source-filter").value = "";
+          state.page = 1;
+          setFilterOptions(filteredRows());
+          renderFiltered();
+        });
         $("#status-filter").addEventListener("change", function (event) { state.filters.status=event.target.value; state.page=1; renderFiltered(); });
         $("#source-filter").addEventListener("change", function (event) { state.filters.source=event.target.value; state.page=1; renderFiltered(); });
         $("#prev-page").addEventListener("click", function () { state.page-=1; renderRows(filteredRows()); });
