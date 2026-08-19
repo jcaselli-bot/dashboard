@@ -9,6 +9,7 @@ const SCHEDULE_CATEGORIES = [
 ];
 
 const BLANKISH = new Set(["", "null", "undefined", "n/a", "na", "none", "unknown", "-"]);
+const AHOY_CONNECTION_INTERNAL_VALUES = new Set(["48415030"]);
 
 export const STANDARD_PROPERTIES = [
   "firstname",
@@ -53,12 +54,15 @@ export function classifyServiceSegments(value) {
 export function isOfflineAhoyConnectionContact(record) {
   const props = record?.properties || {};
   const source = clean(props.hs_analytics_source).toLowerCase().replace(/[^a-z0-9]+/g, " ");
-  const details = [
+  const rawDetails = [
     props.hs_analytics_source_data_1,
     props.hs_analytics_source_data_2,
-  ].map((value) => clean(value).toLowerCase().replace(/[^a-z0-9]+/g, " "));
+  ].map(clean);
+  const details = rawDetails.map((value) => value.toLowerCase().replace(/[^a-z0-9]+/g, " "));
   const isOffline = source === "offline" || source === "offline sources";
-  return isOffline && details.includes("ahoy connection");
+  const isAhoyConnection = rawDetails.some((value) => AHOY_CONNECTION_INTERNAL_VALUES.has(value))
+    || details.some((value) => value.includes("ahoy connection"));
+  return isOffline && isAhoyConnection;
 }
 
 export function normalizeEmail(value) {
@@ -79,6 +83,22 @@ export function parseDateValue(value) {
     ? new Date(numeric < 100000000000 ? numeric * 1000 : numeric)
     : new Date(normalized);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function recordCreatedInRange(record, start, end) {
+  const created = parseDateValue(record?.createdAt || record?.properties?.createdate)?.getTime();
+  const startMs = parseDateValue(start)?.getTime();
+  const endMs = parseDateValue(end)?.getTime();
+  if (![created, startMs, endMs].every(Number.isFinite)) return false;
+  return created >= startMs && created < endMs;
+}
+
+function dateValueInRange(value, start, end) {
+  const dateMs = parseDateValue(value)?.getTime();
+  const startMs = parseDateValue(start)?.getTime();
+  const endMs = parseDateValue(end)?.getTime();
+  if (![dateMs, startMs, endMs].every(Number.isFinite)) return false;
+  return dateMs >= startMs && dateMs < endMs;
 }
 
 function categoryFromStatus(status, dateValue, source = "property") {
@@ -404,30 +424,37 @@ function buildServiceBreakdown(rows) {
     .sort((a, b) => b.leads - a.leads || a.service.localeCompare(b.service));
 }
 
-function buildSegmentBreakdown(rows) {
+function buildSegmentBreakdown(rows, appointmentRows = rows) {
   return ["Roofing", "Solar"].map((segment) => {
     const segmentRows = rows.filter((row) => row.serviceSegments.includes(segment));
+    const segmentAppointments = appointmentRows.filter((row) => row.serviceSegments.includes(segment));
     const leads = segmentRows.length;
-    const appointmentSet = segmentRows.filter((row) => row.everScheduled).length;
+    const appointmentSet = segmentAppointments.length;
+    const newLeadsEverScheduled = segmentRows.filter((row) => row.everScheduled).length;
     return {
       segment,
       leads,
       appointmentSet,
-      appointmentRate: leads ? appointmentSet / leads : 0,
-      activeScheduled: segmentRows.filter((row) => ["Scheduled", "Rescheduled"].includes(row.scheduleCategory)).length,
-      completed: segmentRows.filter((row) => row.scheduleCategory === "Completed").length,
+      appointmentRate: leads ? newLeadsEverScheduled / leads : 0,
+      activeScheduled: segmentAppointments.filter((row) => ["Scheduled", "Rescheduled"].includes(row.scheduleCategory)).length,
+      completed: segmentAppointments.filter((row) => row.scheduleCategory === "Completed").length,
       notScheduled: segmentRows.filter((row) => !row.everScheduled).length,
     };
   });
 }
 
-function buildDailyTrend(rows) {
+function buildDailyTrend(rows, appointmentRows = []) {
   const days = new Map();
   rows.forEach((row) => {
     const day = row.createdAt ? row.createdAt.slice(0, 10) : "Unknown";
     const item = days.get(day) || { date: day, leads: 0, appointmentSet: 0 };
     item.leads += 1;
-    if (row.everScheduled) item.appointmentSet += 1;
+    days.set(day, item);
+  });
+  appointmentRows.forEach((row) => {
+    const day = row.appointmentDate ? row.appointmentDate.slice(0, 10) : "Unknown";
+    const item = days.get(day) || { date: day, leads: 0, appointmentSet: 0 };
+    item.appointmentSet += 1;
     days.set(day, item);
   });
   return [...days.values()].sort((a, b) => a.date.localeCompare(b.date));
@@ -442,8 +469,16 @@ export function buildReport(records, config = {}) {
     now,
     dedupeBy: config.dedupeBy || "email_phone",
   });
+  const hasCreatedRange = Boolean(config.rangeStart && config.rangeEnd);
+  const inCreatedRange = (record) => !hasCreatedRange
+    || recordCreatedInRange(record, config.rangeStart, config.rangeEnd);
+  const inputRecordsInRange = records.filter(inCreatedRange);
+  const canonicalRecordsInRange = dedupeResult.records.filter(inCreatedRange);
+  const duplicateGroupsInRange = dedupeResult.duplicateGroups.filter((group) => (
+    !hasCreatedRange || group.records.some(inCreatedRange)
+  ));
 
-  const rows = dedupeResult.records.map((record) => {
+  const makeRow = (record) => {
     const props = record.properties || {};
     const schedule = getScheduleSnapshot(record, mapping, now);
     const rawService = displayPropertyValue(mapping.service, props[mapping.service], propertyDefinitions);
@@ -481,17 +516,30 @@ export function buildReport(records, config = {}) {
         schedule.category === "Other / review" ? "Status needs review" : "",
       ].filter(Boolean),
     };
-  }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  };
+  const canonicalIdsInRange = new Set(canonicalRecordsInRange.map((record) => String(record.id)));
+  const allRows = dedupeResult.records.map(makeRow);
+  const rows = allRows.filter((row) => canonicalIdsInRange.has(row.id))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const appointmentRows = allRows.filter((row) => (
+    Boolean(row.appointmentDate)
+      && (!hasCreatedRange || dateValueInRange(row.appointmentDate, config.rangeStart, config.rangeEnd))
+  )).sort((a, b) => b.appointmentDate.localeCompare(a.appointmentDate));
 
   const uniqueLeads = rows.length;
-  const appointmentSet = rows.filter((row) => row.everScheduled).length;
-  const activeScheduled = rows.filter((row) => ["Scheduled", "Rescheduled"].includes(row.scheduleCategory)).length;
-  const completed = rows.filter((row) => row.scheduleCategory === "Completed").length;
-  const canceledNoShow = rows.filter((row) => ["Canceled", "No-show"].includes(row.scheduleCategory)).length;
+  const newLeadsEverScheduled = rows.filter((row) => row.everScheduled).length;
+  const appointmentSet = appointmentRows.length;
+  const activeScheduled = appointmentRows.filter((row) => ["Scheduled", "Rescheduled"].includes(row.scheduleCategory)).length;
+  const completed = appointmentRows.filter((row) => row.scheduleCategory === "Completed").length;
+  const canceledNoShow = appointmentRows.filter((row) => ["Canceled", "No-show"].includes(row.scheduleCategory)).length;
   const notScheduled = rows.filter((row) => !row.everScheduled).length;
 
-  const duplicateAudit = dedupeResult.duplicateGroups.map((group) => {
-    const kept = rows.find((row) => row.id === group.keptId);
+  const canonicalById = new Map(dedupeResult.records.map((record) => [String(record.id), record]));
+  const allRowsById = new Map(allRows.map((row) => [row.id, row]));
+  const duplicateAudit = duplicateGroupsInRange.map((group) => {
+    const keptRecord = canonicalById.get(group.keptId);
+    const kept = allRowsById.get(group.keptId)
+      || (keptRecord ? makeRow(keptRecord) : null);
     return {
       keptId: group.keptId,
       keptName: kept?.name || "Unnamed lead",
@@ -505,12 +553,14 @@ export function buildReport(records, config = {}) {
   return {
     generatedAt: now.toISOString(),
     summary: {
-      importedRecords: records.length,
+      importedRecords: inputRecordsInRange.length,
+      historyRecordsScanned: records.length,
       uniqueLeads,
-      duplicatesRemoved: dedupeResult.duplicatesRemoved,
-      duplicateGroups: dedupeResult.duplicateGroups.length,
+      duplicatesRemoved: Math.max(0, inputRecordsInRange.length - uniqueLeads),
+      duplicateGroups: duplicateGroupsInRange.length,
       appointmentSet,
-      appointmentRate: uniqueLeads ? appointmentSet / uniqueLeads : 0,
+      newLeadsEverScheduled,
+      appointmentRate: uniqueLeads ? newLeadsEverScheduled / uniqueLeads : 0,
       activeScheduled,
       completed,
       canceledNoShow,
@@ -518,20 +568,21 @@ export function buildReport(records, config = {}) {
     },
     statuses: SCHEDULE_CATEGORIES.map((label) => ({
       label,
-      count: rows.filter((row) => row.scheduleCategory === label).length,
+      count: appointmentRows.filter((row) => row.scheduleCategory === label).length,
     })),
-    rawStatuses: countBy(rows, (row) => row.rawScheduleStatus || row.scheduleCategory),
+    rawStatuses: countBy(appointmentRows, (row) => row.rawScheduleStatus || row.scheduleCategory),
     services: buildServiceBreakdown(rows),
-    serviceSegments: buildSegmentBreakdown(rows),
+    serviceSegments: buildSegmentBreakdown(rows, appointmentRows),
     sources: countBy(rows, (row) => row.leadSource),
     owners: countBy(rows, (row) => row.owner),
-    dailyTrend: buildDailyTrend(rows),
+    dailyTrend: buildDailyTrend(rows, appointmentRows),
     dataQuality: {
       noContactMethod: rows.filter((row) => !row.email && !row.phone).length,
       missingService: rows.filter((row) => row.service === "Unassigned service").length,
       statusesToReview: rows.filter((row) => row.scheduleCategory === "Other / review").length,
     },
     duplicateAudit,
+    appointmentRows,
     rows,
   };
 }
