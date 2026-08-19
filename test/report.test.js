@@ -71,6 +71,72 @@ test("retains the oldest-created contact while using newer scheduling informatio
   assert.equal(result.records[0].createdAt, "2026-07-01T00:00:00.000Z");
 });
 
+test("deduplicates against earlier contacts before applying the selected create-date range", () => {
+  const original = contact(18, {
+    email:"same@example.com",
+    service:"Roofing",
+  }, "2026-08-18T10:00:00.000Z");
+  original.createdAt = "2026-08-18T09:00:00.000Z";
+  const duplicate = contact(19, {
+    email:"SAME@example.com",
+    service:"Roofing",
+    appointment_status:"SCHEDULED",
+    appointment_date:"2026-08-22T14:00:00.000Z",
+  }, "2026-08-19T11:00:00.000Z");
+  duplicate.createdAt = "2026-08-19T10:00:00.000Z";
+
+  const august19Only = buildReport([original, duplicate], {
+    mapping,
+    now:new Date("2026-08-20T12:00:00.000Z"),
+    rangeStart:"2026-08-19T00:00:00.000Z",
+    rangeEnd:"2026-08-20T00:00:00.000Z",
+  });
+  assert.equal(august19Only.summary.importedRecords, 1);
+  assert.equal(august19Only.summary.uniqueLeads, 0);
+  assert.equal(august19Only.summary.duplicatesRemoved, 1);
+  assert.equal(august19Only.rows.length, 0);
+  assert.equal(august19Only.duplicateAudit[0].keptId, "18");
+
+  const bothDates = buildReport([original, duplicate], {
+    mapping,
+    now:new Date("2026-08-20T12:00:00.000Z"),
+    rangeStart:"2026-08-18T00:00:00.000Z",
+    rangeEnd:"2026-08-20T00:00:00.000Z",
+  });
+  assert.equal(bothDates.summary.importedRecords, 2);
+  assert.equal(bothDates.summary.uniqueLeads, 1);
+  assert.equal(bothDates.summary.duplicatesRemoved, 1);
+  assert.equal(bothDates.rows[0].id, "18");
+  assert.equal(bothDates.rows[0].scheduleCategory, "Scheduled");
+});
+
+test("filters new leads by original create date and appointments by appointment date", () => {
+  const olderLead = contact(1, {
+    email:"older@example.com",
+    service:"Solar",
+    appointment_status:"SCHEDULED",
+    appointment_date:"2026-08-19T15:00:00.000Z",
+  }, "2026-08-18T12:00:00.000Z");
+  olderLead.createdAt = "2026-08-01T12:00:00.000Z";
+  const newLead = contact(2, {
+    email:"new@example.com",
+    service:"Roofing",
+  }, "2026-08-19T13:00:00.000Z");
+  newLead.createdAt = "2026-08-19T12:00:00.000Z";
+
+  const report = buildReport([olderLead, newLead], {
+    mapping,
+    now:new Date("2026-08-20T12:00:00.000Z"),
+    rangeStart:"2026-08-19T00:00:00.000Z",
+    rangeEnd:"2026-08-20T00:00:00.000Z",
+  });
+  assert.deepEqual(report.rows.map((row) => row.id), ["2"]);
+  assert.deepEqual(report.appointmentRows.map((row) => row.id), ["1"]);
+  assert.equal(report.summary.uniqueLeads, 1);
+  assert.equal(report.summary.appointmentSet, 1);
+  assert.equal(report.statuses.find((item) => item.label === "Scheduled").count, 1);
+});
+
 test("joins duplicate chains connected by email or phone", () => {
   const first = contact(1, { email:"same@example.com", phone:"856-555-0101" });
   const second = contact(2, { email:"same@example.com", phone:"856-555-0199" });
@@ -142,7 +208,10 @@ test("classifies Roofing and Solar without duplicating the overall row", () => {
 test("excludes only Offline Sources contacts whose drill-down is Ahoy-Connection", () => {
   assert.equal(isOfflineAhoyConnectionContact(contact(1, { hs_analytics_source:"OFFLINE", hs_analytics_source_data_1:"Ahoy-Connection" })), true);
   assert.equal(isOfflineAhoyConnectionContact(contact(2, { hs_analytics_source:"Offline Sources", hs_analytics_source_data_2:"ahoy connection" })), true);
+  assert.equal(isOfflineAhoyConnectionContact(contact(5, { hs_analytics_source:"OFFLINE_SOURCES", hs_analytics_source_data_2:"Created by Ahoy-Connection integration" })), true);
+  assert.equal(isOfflineAhoyConnectionContact(contact(6, { hs_analytics_source:"OFFLINE", hs_analytics_source_data_2:"48415030" })), true);
   assert.equal(isOfflineAhoyConnectionContact(contact(3, { hs_analytics_source:"PAID_SOCIAL", hs_analytics_source_data_1:"Ahoy-Connection" })), false);
+  assert.equal(isOfflineAhoyConnectionContact(contact(7, { hs_analytics_source:"PAID_SOCIAL", hs_analytics_source_data_2:"48415030" })), false);
   assert.equal(isOfflineAhoyConnectionContact(contact(4, { hs_analytics_source:"OFFLINE", hs_analytics_source_data_1:"Trade show" })), false);
 });
 
