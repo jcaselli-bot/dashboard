@@ -1,0 +1,6 @@
+.dev.vars
+src/embedded-credentials.js
+.wrangler
+node_modules
+.DS_Store
+*.log

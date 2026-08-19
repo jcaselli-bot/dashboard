@@ -1,0 +1,14 @@
+{
+  "name": "velocity-lead-dashboard",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Read-only HubSpot dashboard for deduplicated lead, service, and appointment reporting.",
+  "scripts": {
+    "dev": "node dev-server.mjs",
+    "preview": "node dev-server.mjs",
+    "test": "node --test",
+    "check": "node --check src/index.js && node --check src/report.js && node --check src/hubspot.js && node --test",
+    "deploy": "npx wrangler@latest deploy"
+  }
+}

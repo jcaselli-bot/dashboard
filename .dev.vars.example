@@ -1,0 +1,9 @@
+# Copy this file to .dev.vars for local Wrangler development.
+# Never commit a real HubSpot token or dashboard password.
+HUBSPOT_ACCESS_TOKEN=pat-na1-your-private-app-token
+DASHBOARD_USERNAME=velocity
+DASHBOARD_PASSWORD=replace-with-a-long-random-password
+
+# For local demo data only, you may omit DASHBOARD_PASSWORD and use:
+# ALLOW_UNAUTHENTICATED=true
+
