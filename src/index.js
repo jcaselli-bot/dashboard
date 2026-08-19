@@ -1,6 +1,7 @@
 import { DASHBOARD_HTML, SETUP_HTML } from "./ui.js";
 import {
   buildReport,
+  APPOINTMENT_SET_DATE_PROPERTY,
   DEFAULT_MAPPING,
   isOfflineAhoyConnectionContact,
   isLeaderSourceContact,
@@ -8,7 +9,6 @@ import {
   recordCreatedInRange,
 } from "./report.js";
 import {
-  addContactPropertyHistory,
   addScheduleActivities,
   fetchContactProperties,
   fetchContacts,
@@ -302,24 +302,12 @@ async function liveReport(request, env) {
     warnings.push(`${excludedLeaderContacts.length} LEADer-source contact${excludedLeaderContacts.length === 1 ? "" : "s"} excluded from scanned history before deduplication.`);
   }
 
-  let bookingHistoryAvailable = true;
-  let bookingHistoryCounts = { requested: contacts.length, loaded: 0 };
-  const [historyOutcome, activityOutcome] = await Promise.allSettled([
-    addContactPropertyHistory(token, contacts, ["lifecyclestage"]),
-    addScheduleActivities(token, contacts, scheduleSource),
-  ]);
-  if (historyOutcome.status === "fulfilled") {
-    bookingHistoryCounts = historyOutcome.value;
-    if (bookingHistoryCounts.loaded !== bookingHistoryCounts.requested) {
-      bookingHistoryAvailable = false;
-      warnings.push("Some lifecycle-stage histories were unavailable, so appointment-booking totals may be incomplete.");
-    }
-  } else {
-    bookingHistoryAvailable = false;
-    warnings.push("Lifecycle-stage history was unavailable, so appointment-booking totals cannot be calculated for this refresh.");
+  const bookingDataAvailable = propertyResult.status !== "fulfilled"
+    || contactProperties.some((property) => property.name === APPOINTMENT_SET_DATE_PROPERTY);
+  if (!bookingDataAvailable) {
+    warnings.push(`HubSpot property ${APPOINTMENT_SET_DATE_PROPERTY} was not found, so appointment-booking totals are unavailable.`);
   }
-  if (activityOutcome.status === "rejected") throw activityOutcome.reason;
-  const activityResult = activityOutcome.value;
+  const activityResult = await addScheduleActivities(token, contacts, scheduleSource);
   warnings.push(...activityResult.warnings);
 
   const report = buildReport(contacts, {
@@ -330,7 +318,8 @@ async function liveReport(request, env) {
     now: reportNow,
     rangeStart: start,
     rangeEnd: end,
-    bookingHistoryAvailable,
+    bookingDateProperty: APPOINTMENT_SET_DATE_PROPERTY,
+    bookingDataAvailable,
   });
   return json({
     ...report,
@@ -348,7 +337,7 @@ async function liveReport(request, env) {
     mapping,
     scheduleSource,
     activityCounts: activityResult.counts,
-    bookingHistoryCounts,
+    bookingDateProperty: APPOINTMENT_SET_DATE_PROPERTY,
     warnings,
   });
 }

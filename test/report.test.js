@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  APPOINTMENT_SET_DATE_PROPERTY,
   buildReport,
   classifyServiceSegments,
   dedupeContacts,
@@ -26,7 +27,6 @@ function contact(id, properties = {}, updatedAt = "2026-08-01T00:00:00.000Z") {
     createdAt:"2026-08-01T00:00:00.000Z",
     updatedAt,
     properties:{ firstname:"Test", lastname:`Lead ${id}`, ...properties },
-    propertiesWithHistory:{},
     scheduleItems:[],
   };
 }
@@ -73,27 +73,25 @@ test("retains the oldest-created contact while using newer scheduling informatio
   assert.equal(result.records[0].createdAt, "2026-07-01T00:00:00.000Z");
 });
 
-test("merges lifecycle-stage history from newer duplicate contacts", () => {
-  const oldest = contact(1, { email:"same@example.com", service:"Roofing", lifecyclestage:"lead" });
+test("uses Date entered Appointment Set from newer duplicate contacts", () => {
+  const oldest = contact(1, { email:"same@example.com", service:"Roofing" });
   oldest.createdAt = "2026-08-01T00:00:00.000Z";
-  oldest.propertiesWithHistory = {
-    lifecyclestage:[{ value:"lead", timestamp:"2026-08-01T00:00:00.000Z" }],
-  };
-  const newer = contact(2, { email:"same@example.com", service:"Roofing", lifecyclestage:"9001" });
+  const newer = contact(2, {
+    email:"same@example.com",
+    service:"Roofing",
+    [APPOINTMENT_SET_DATE_PROPERTY]:"2026-08-19T18:12:00.000Z",
+  });
   newer.createdAt = "2026-08-19T10:00:00.000Z";
-  newer.propertiesWithHistory = {
-    lifecyclestage:[{ value:"9001", timestamp:"2026-08-19T18:12:00.000Z" }],
-  };
 
   const report = buildReport([oldest, newer], {
     mapping,
-    propertyDefinitions:{ lifecyclestage:{ options:[{ value:"9001", label:"Appointment Set" }] } },
     rangeStart:"2026-08-19T04:00:00.000Z",
     rangeEnd:"2026-08-20T04:00:00.000Z",
     now:new Date("2026-08-20T12:00:00.000Z"),
   });
   assert.equal(report.summary.uniqueLeads, 0);
   assert.equal(report.summary.totalBookedInRange, 1);
+  assert.equal(report.summary.bookingDateProperty, APPOINTMENT_SET_DATE_PROPERTY);
   assert.equal(report.bookingRows[0].id, "1");
   assert.equal(report.bookingRows[0].bookingDate, "2026-08-19T18:12:00.000Z");
 });
@@ -168,36 +166,20 @@ test("separates cohort booking rate from all bookings made in the selected range
   const olderBookedToday = contact(1, {
     email:"older@example.com",
     service:"Solar",
-    lifecyclestage:"9001",
+    [APPOINTMENT_SET_DATE_PROPERTY]:"2026-08-19T18:12:00.000Z",
   });
   olderBookedToday.createdAt = "2026-07-01T12:00:00.000Z";
-  olderBookedToday.propertiesWithHistory = {
-    lifecyclestage:[
-      { value:"lead", timestamp:"2026-07-01T12:00:00.000Z" },
-      { value:"9001", timestamp:"2026-08-19T18:12:00.000Z" },
-    ],
-  };
   const newBookedLater = contact(2, {
     email:"new-booked@example.com",
     service:"Roofing",
-    lifecyclestage:"9001",
+    [APPOINTMENT_SET_DATE_PROPERTY]:"2026-08-21T15:00:00.000Z",
   });
   newBookedLater.createdAt = "2026-08-19T12:00:00.000Z";
-  newBookedLater.propertiesWithHistory = {
-    lifecyclestage:[
-      { value:"lead", timestamp:"2026-08-19T12:00:00.000Z" },
-      { value:"9001", timestamp:"2026-08-21T15:00:00.000Z" },
-    ],
-  };
-  const newNotBooked = contact(3, { email:"new@example.com", service:"Roofing", lifecyclestage:"lead" });
+  const newNotBooked = contact(3, { email:"new@example.com", service:"Roofing" });
   newNotBooked.createdAt = "2026-08-19T13:00:00.000Z";
-  newNotBooked.propertiesWithHistory = {
-    lifecyclestage:[{ value:"lead", timestamp:"2026-08-19T13:00:00.000Z" }],
-  };
 
   const report = buildReport([olderBookedToday, newBookedLater, newNotBooked], {
     mapping,
-    propertyDefinitions:{ lifecyclestage:{ options:[{ value:"9001", label:"Appointment Set" }] } },
     rangeStart:"2026-08-19T04:00:00.000Z",
     rangeEnd:"2026-08-20T04:00:00.000Z",
     now:new Date("2026-08-22T12:00:00.000Z"),
@@ -260,6 +242,37 @@ test("normalizes common meeting outcomes", () => {
   const snapshot = getScheduleSnapshot(record, mapping, new Date("2026-08-19"));
   assert.equal(snapshot.category, "No-show");
   assert.equal(snapshot.everScheduled, true);
+});
+
+test("uses lifecycle stage for the status breakdown and fixes Not Scheduled precedence", () => {
+  const appointmentSet = contact(1, {
+    email:"booked@example.com",
+    lifecyclestage:"9001",
+    appointment_status:"NOT SCHEDULED",
+    appointment_date:"2026-08-19T15:00:00.000Z",
+  });
+  const lead = contact(2, {
+    email:"lead@example.com",
+    lifecyclestage:"lead",
+    appointment_status:"SCHEDULED",
+    appointment_date:"2026-08-19T16:00:00.000Z",
+  });
+  const report = buildReport([appointmentSet, lead], {
+    mapping,
+    propertyDefinitions:{
+      lifecyclestage:{ options:[
+        { value:"9001", label:"Appointment Set" },
+        { value:"lead", label:"Lead" },
+      ] },
+    },
+    rangeStart:"2026-08-19T00:00:00.000Z",
+    rangeEnd:"2026-08-20T00:00:00.000Z",
+    now:new Date("2026-08-20T12:00:00.000Z"),
+  });
+  assert.equal(report.appointmentRows.find((row) => row.id === "1").scheduleCategory, "Scheduled");
+  assert.equal(report.appointmentRows.find((row) => row.id === "2").scheduleCategory, "Not scheduled");
+  assert.equal(report.statuses.find((item) => item.label === "Scheduled").count, 1);
+  assert.equal(report.statuses.find((item) => item.label === "Not scheduled").count, 1);
 });
 
 test("normalizes Velocity appointment outcomes", () => {

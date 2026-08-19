@@ -1,3 +1,5 @@
+import { APPOINTMENT_SET_DATE_PROPERTY } from "./report.js";
+
 const FIRST_NAMES = ["Avery", "Jordan", "Taylor", "Morgan", "Cameron", "Riley", "Casey", "Logan", "Drew", "Quinn", "Sam", "Reese"];
 const LAST_NAMES = ["Parker", "Rivera", "Miller", "Wilson", "Brown", "Davis", "Martinez", "Clark", "Lewis", "Young", "Hall", "King"];
 const SERVICES = ["Roof Replacement", "Solar", "Roof + Solar", "Roof Repair", "Unassigned"];
@@ -19,6 +21,7 @@ export function buildDemoData(now = new Date()) {
     const createdAt = isoDaysAgo(now, index % 21, 11 + (index % 7));
     const status = STATUSES[index % STATUSES.length];
     const booked = Boolean(status);
+    const bookedAt = booked ? isoDaysAgo(now, Math.max(0, (index % 21) - 1), 16) : "";
     const service = SERVICES[(index * 3) % SERVICES.length];
     const phoneNumber = `856555${String(1000 + index).slice(-4)}`;
     const record = {
@@ -37,14 +40,9 @@ export function buildDemoData(now = new Date()) {
         appointment_date: index % 4 === 0 && status ? isoDaysAgo(now, -(index % 6), 18) : "",
         appointment_type: index % 4 === 0 && status ? "In-home consultation" : "",
         lifecyclestage: booked ? "appointment_set" : "lead",
+        [APPOINTMENT_SET_DATE_PROPERTY]: bookedAt,
         hs_analytics_source: SOURCES[index % SOURCES.length],
         hubspot_owner_id: String(100 + (index % 4)),
-      },
-      propertiesWithHistory: {
-        lifecyclestage: [
-          { value:"lead", timestamp:createdAt, sourceType:"CRM_UI" },
-          ...(booked ? [{ value:"appointment_set", timestamp:isoDaysAgo(now, Math.max(0, (index % 21) - 1), 16), sourceType:"CRM_UI" }] : []),
-        ],
       },
       scheduleItems: index % 4 !== 0 && status ? [{
         id: `meeting-${index}`,
@@ -73,12 +71,7 @@ export function buildDemoData(now = new Date()) {
         appointment_date: isoDaysAgo(now, -(duplicateIndex + 1), 19),
         appointment_type: "In-home consultation",
         lifecyclestage: "appointment_set",
-      },
-      propertiesWithHistory: {
-        lifecyclestage: [
-          ...(source.propertiesWithHistory?.lifecyclestage || []),
-          { value:"appointment_set", timestamp:isoDaysAgo(now, 0, 17 + duplicateIndex), sourceType:"CRM_UI" },
-        ],
+        [APPOINTMENT_SET_DATE_PROPERTY]: isoDaysAgo(now, 0, 17 + duplicateIndex),
       },
       scheduleItems: [{
         id: `appointment-duplicate-${duplicateIndex}`,
@@ -104,6 +97,7 @@ export function buildDemoData(now = new Date()) {
         { label:"Lead", value:"lead" },
         { label:"Appointment Set", value:"appointment_set" },
       ] },
+      [APPOINTMENT_SET_DATE_PROPERTY]: { name: APPOINTMENT_SET_DATE_PROPERTY, label: "Date entered Appointment Set", type: "datetime", options: [] },
       hubspot_owner_id: { name: "hubspot_owner_id", label: "Contact owner", type: "enumeration", options: [] },
     },
     owners: {

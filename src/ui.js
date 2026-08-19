@@ -305,7 +305,7 @@ export const DASHBOARD_HTML = `<!doctype html>
         <article class="kpi"><div class="kpi-label">Unique new leads</div><div class="kpi-value skeleton">000</div><div class="kpi-note">After history-wide duplicate removal</div></article>
         <article class="kpi"><div class="kpi-label">Booked from new leads</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Selected lead cohort that reached Appointment Set</div></article>
         <article class="kpi"><div class="kpi-label">New-lead booking rate</div><div class="kpi-value skeleton">00%</div><div class="kpi-note">Booked cohort leads ÷ unique new leads</div></article>
-        <article class="kpi"><div class="kpi-label">Total booked in range</div><div class="kpi-value skeleton">000</div><div class="kpi-note">All Appointment Set stage changes</div></article>
+        <article class="kpi"><div class="kpi-label">Total booked in range</div><div class="kpi-value skeleton">000</div><div class="kpi-note">All Date entered Appointment Set values</div></article>
         <article class="kpi"><div class="kpi-label">Appointments occurring</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Based on actual appointment date</div></article>
         <article class="kpi"><div class="kpi-label">Duplicates removed</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Oldest contact retained</div></article>
       </section>
@@ -318,14 +318,14 @@ export const DASHBOARD_HTML = `<!doctype html>
       <section class="main-grid">
         <article class="panel">
           <div class="panel-head">
-            <div><h2 class="panel-title">New leads and appointments booked</h2><div class="panel-sub" id="trend-sub">Leads by original create date; bookings by the Appointment Set stage-change date</div></div>
+            <div><h2 class="panel-title">New leads and appointments booked</h2><div class="panel-sub" id="trend-sub">Leads by original create date; bookings by Date entered Appointment Set</div></div>
             <div class="legend-inline"><span><i class="legend-dot"></i>Leads</span><span><i class="legend-dot orange"></i>Booked</span></div>
           </div>
           <div class="trend" id="trend"><div class="empty">Loading trend…</div></div>
         </article>
         <article class="panel">
           <div class="panel-head">
-            <div><h2 class="panel-title">Appointments occurring in range</h2><div class="panel-sub">Outcomes grouped by actual appointment date, separate from booking date</div></div>
+            <div><h2 class="panel-title">Lifecycle stage of appointments occurring</h2><div class="panel-sub">Current HubSpot lifecycle stage for appointments whose actual date is in range</div></div>
           </div>
           <div class="schedule-body">
             <div class="donut" id="donut"><div class="donut-center"><div class="donut-value" id="donut-value">—</div><div class="donut-label">appointments</div></div></div>
@@ -337,7 +337,7 @@ export const DASHBOARD_HTML = `<!doctype html>
       <section class="panel filters" aria-label="Report filters">
         <div class="search"><span class="search-icon">⌕</span><input class="control" id="search" type="search" placeholder="Search name, email, phone, service…"></div>
         <select class="control" id="segment-filter" aria-label="Filter by business line"><option value="">Roofing + Solar</option><option value="Roofing">Roofing only</option><option value="Solar">Solar only</option><option value="Unclassified">Unclassified</option></select>
-        <select class="control" id="status-filter" aria-label="Filter by scheduling status"><option value="">All scheduling outcomes</option></select>
+        <select class="control" id="status-filter" aria-label="Filter by lifecycle stage category"><option value="">All lifecycle categories</option></select>
         <select class="control" id="source-filter" aria-label="Filter by lead source"><option value="">All sources</option></select>
         <span class="count-chip" id="filtered-count">—</span>
         <button class="btn" id="export-btn" type="button">Export CSV</button>
@@ -365,7 +365,7 @@ export const DASHBOARD_HTML = `<!doctype html>
         </div>
         <div class="table-wrap">
           <table class="lead-table">
-            <thead><tr><th>Lead</th><th>Service</th><th>Booked</th><th>Scheduling</th><th>Appointment</th><th>Source</th><th>Owner</th><th>Created</th></tr></thead>
+            <thead><tr><th>Lead</th><th>Service</th><th>Booked</th><th>Lifecycle stage</th><th>Appointment</th><th>Source</th><th>Owner</th><th>Created</th></tr></thead>
             <tbody id="lead-rows"></tbody>
           </table>
         </div>
@@ -388,7 +388,7 @@ export const DASHBOARD_HTML = `<!doctype html>
   </div>
 
   <div class="loading" id="loading" role="status" aria-live="polite">
-    <div class="loader-card"><div class="spinner"></div><div class="loader-title">Building the clean lead report</div><div class="loader-sub">Pulling HubSpot contacts, lifecycle-stage history, appointments, and duplicate groups…</div></div>
+    <div class="loader-card"><div class="spinner"></div><div class="loader-title">Building the clean lead report</div><div class="loader-sub">Pulling HubSpot contacts, booking dates, appointments, and duplicate groups…</div></div>
   </div>
 
   <dialog id="settings-dialog">
@@ -409,7 +409,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 
         <section class="settings-section">
           <div class="settings-title">Contact property mapping</div>
-          <div class="settings-copy">Choose from the suggestions or enter a HubSpot property’s internal name manually. Lifecycle-stage history is read automatically to find when each contact entered Appointment Set; no booking-date mapping is needed.</div>
+          <div class="settings-copy">Choose from the suggestions or enter a HubSpot property’s internal name manually. HubSpot’s calculated Date entered Appointment Set property is read automatically; no booking-date mapping is needed.</div>
           <datalist id="property-options"></datalist>
           <div class="field-grid">
             <div class="field"><label for="map-service">Service</label><input id="map-service" list="property-options" placeholder="e.g. service_interest"></div>
@@ -424,7 +424,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 
         <section class="settings-section">
           <div class="settings-title">Duplicate decision rule</div>
-          <div class="rule-box"><strong>Before the selected start date is applied:</strong> exclude Offline Sources / Ahoy-Connection and LEADer-source contacts, then group matching contacts across HubSpot history through the selected end date and retain the oldest create date. The retained row combines lifecycle-stage history and the most recently updated nonblank service and appointment details from every duplicate.</div>
+          <div class="rule-box"><strong>Before the selected start date is applied:</strong> exclude Offline Sources / Ahoy-Connection and LEADer-source contacts, then group matching contacts across HubSpot history through the selected end date and retain the oldest create date. The retained row keeps the latest Date entered Appointment Set value and the most recently updated nonblank service and appointment details from every duplicate.</div>
         </section>
 
         <section class="settings-section">
@@ -765,10 +765,10 @@ export const DASHBOARD_HTML = `<!doctype html>
 
       function renderKpis(rows, metrics) {
         var duplicateCount = state.report ? state.report.summary.duplicatesRemoved : 0;
-        var historyAvailable = !state.report || state.report.summary.bookingHistoryAvailable !== false;
-        var bookingCount = historyAvailable ? number.format(metrics.bookedFromNewLeads) : "—";
-        var bookingRate = historyAvailable ? percent(metrics.total ? metrics.bookedFromNewLeads / metrics.total : 0) : "—";
-        var totalBooked = historyAvailable ? number.format(metrics.totalBookedInRange) : "—";
+        var bookingDataAvailable = !state.report || state.report.summary.bookingHistoryAvailable !== false;
+        var bookingCount = bookingDataAvailable ? number.format(metrics.bookedFromNewLeads) : "—";
+        var bookingRate = bookingDataAvailable ? percent(metrics.total ? metrics.bookedFromNewLeads / metrics.total : 0) : "—";
+        var totalBooked = bookingDataAvailable ? number.format(metrics.totalBookedInRange) : "—";
         var cards = [
           { label:"Unique new leads", value:number.format(metrics.total), note:rows.length === state.report.rows.length ? "After history-wide duplicate removal" : "Matches current filters", glow:"rgba(57,198,216,.13)" },
           { label:"Booked from new leads", value:bookingCount, note:"Created in range and ever entered Appointment Set", glow:"rgba(73,207,147,.13)" },
@@ -891,7 +891,7 @@ export const DASHBOARD_HTML = `<!doctype html>
             var appointmentMain = row.appointmentDate ? dateTime.format(new Date(row.appointmentDate)) : (row.rawScheduleStatus || "No appointment date");
             var appointmentSub = [row.appointmentType, row.scheduleSource].filter(Boolean).join(" · ");
             var bookedMain = row.bookedEver && row.lastBookedAt ? dateTime.format(new Date(row.lastBookedAt)) : "Not booked";
-            var bookedSub = row.bookedEver ? "Entered Lifecycle stage: Appointment Set" : "No Appointment Set history";
+            var bookedSub = row.bookedEver ? "Entered Lifecycle stage: Appointment Set" : "No Appointment Set date";
             var segmentLabel = rowSegments(row).join(" + ") || "Unclassified";
             return '<tr><td><div class="lead-main personal">' + escapeHtml(contact.name) + '</div><div class="lead-contact personal">' + contactLine + '</div>' + duplicate + '</td><td><span class="badge">' + escapeHtml(segmentLabel) + '</span><div class="appointment-sub">' + escapeHtml(row.service) + '</div></td><td><div class="appointment-main">' + escapeHtml(bookedMain) + '</div><div class="appointment-sub">' + escapeHtml(bookedSub) + '</div></td><td><span class="badge ' + statusClass(row.scheduleCategory) + '">' + escapeHtml(row.scheduleCategory) + '</span><div class="appointment-sub">' + escapeHtml(row.rawScheduleStatus || "") + '</div></td><td><div class="appointment-main">' + escapeHtml(appointmentMain) + '</div><div class="appointment-sub">' + escapeHtml(appointmentSub) + '</div></td><td><div>' + escapeHtml(sourceForRow(row)) + '</div><div class="appointment-sub">' + escapeHtml(row.leadSubsource || "") + '</div></td><td>' + escapeHtml(row.owner) + '</td><td>' + escapeHtml(row.createdAt ? dateShort.format(new Date(row.createdAt)) : "—") + '</td></tr>';
           }).join("");
@@ -907,7 +907,7 @@ export const DASHBOARD_HTML = `<!doctype html>
         var quality = [
           { value:rows.filter(function (row) { return !row.email && !row.phone; }).length, label:"No email or phone" },
           { value:rows.filter(function (row) { return !rowSegments(row).length; }).length, label:"Not classified as Roofing or Solar" },
-          { value:rows.filter(function (row) { return row.scheduleCategory === "Other / review"; }).length, label:"Scheduling status needs review" }
+          { value:rows.filter(function (row) { return row.scheduleCategory === "Other / review"; }).length, label:"Lifecycle stage needs review" }
         ];
         $("#quality-grid").innerHTML = quality.map(function (item) { return '<div class="quality-card"><div class="quality-value">' + number.format(item.value) + '</div><div class="quality-label">' + escapeHtml(item.label) + '</div></div>'; }).join("");
       }
@@ -928,7 +928,7 @@ export const DASHBOARD_HTML = `<!doctype html>
           $(id).innerHTML = '<option value="">' + escapeHtml(firstLabel) + '</option>' + unique.map(function (value) { return '<option value="' + escapeHtml(value) + '">' + escapeHtml(value) + '</option>'; }).join("");
           if (unique.indexOf(current) >= 0) $(id).value = current;
         }
-        options("#status-filter", STATUS_ORDER, "All scheduling outcomes");
+        options("#status-filter", STATUS_ORDER, "All lifecycle categories");
         options("#source-filter", rows.map(sourceForRow), "All sources");
       }
 
@@ -970,7 +970,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 
       function exportCsv() {
         var rows = filteredRows();
-        var header = ["HubSpot ID","Name","Email","Phone","Business line","Raw service","Lifecycle appointment booked","First booked","Latest booked","Scheduling outcome","Raw scheduling status","Appointment date","Appointment type","Scheduling source","Lead source","Lead source detail","Owner","Created","Duplicates suppressed"];
+        var header = ["HubSpot ID","Name","Email","Phone","Business line","Raw service","Lifecycle appointment booked","First booked","Latest booked","Lifecycle category","Lifecycle stage","Appointment date","Appointment type","Scheduling source","Lead source","Lead source detail","Owner","Created","Duplicates suppressed"];
         var lines = [header.map(csvCell).join(",")];
         rows.forEach(function (row) {
           var contact = displayContact(row);

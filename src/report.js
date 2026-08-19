@@ -10,7 +10,7 @@ const SCHEDULE_CATEGORIES = [
 
 const BLANKISH = new Set(["", "null", "undefined", "n/a", "na", "none", "unknown", "-"]);
 const AHOY_CONNECTION_INTERNAL_VALUES = new Set(["48415030"]);
-const LIFECYCLE_STAGE_PROPERTY = "lifecyclestage";
+export const APPOINTMENT_SET_DATE_PROPERTY = "hs_v2_date_entered_1387807760";
 
 export const STANDARD_PROPERTIES = [
   "firstname",
@@ -25,6 +25,7 @@ export const STANDARD_PROPERTIES = [
   "hs_analytics_source_data_1",
   "hs_analytics_source_data_2",
   "lifecyclestage",
+  APPOINTMENT_SET_DATE_PROPERTY,
   "lead_status",
 ];
 
@@ -132,10 +133,10 @@ function categoryFromStatus(status, dateValue, source = "property") {
   if (/resched|rebook/.test(value)) return "Rescheduled";
   if (/^sold$|^sat$|^sit$/.test(value)) return "Completed";
   if (/complete|completed|held|showed|attended|met|finished|done/.test(value)) return "Completed";
-  if (/scheduled|booked|confirmed|appointment set|appt set|set appointment/.test(value)) return "Scheduled";
-  if (/not scheduled|unscheduled|no appointment|not set|new lead|new|open|contacting|attempting|follow.?up|unqualified|bad lead|duplicate/.test(value)) {
+  if (/not scheduled|unscheduled|no appointment|not set|subscriber|prospect|\blead\b|^new$|open|contacting|attempting|follow.?up|unqualified|bad lead|duplicate/.test(value)) {
     return "Not scheduled";
   }
+  if (/scheduled|booked|confirmed|appointment set|appt set|set appointment/.test(value)) return "Scheduled";
   if (dateValue && source !== "property") return "Scheduled";
   if (dateValue && !value) return "Scheduled";
   return value ? "Other / review" : "Not scheduled";
@@ -292,30 +293,6 @@ function scheduleItemKey(item) {
     .join("\u0000");
 }
 
-function propertyHistoryItemKey(item) {
-  return [item?.value, item?.timestamp, item?.sourceType, item?.sourceId, item?.updatedByUserId]
-    .map(clean)
-    .join("\u0000");
-}
-
-function mergePropertyHistories(records) {
-  const histories = {};
-  for (const record of records) {
-    for (const [propertyName, entries] of Object.entries(record.propertiesWithHistory || {})) {
-      if (!histories[propertyName]) histories[propertyName] = new Map();
-      for (const entry of Array.isArray(entries) ? entries : []) {
-        histories[propertyName].set(propertyHistoryItemKey(entry), entry);
-      }
-    }
-  }
-  return Object.fromEntries(Object.entries(histories).map(([propertyName, entries]) => [
-    propertyName,
-    [...entries.values()].sort((a, b) => (
-      (parseDateValue(a?.timestamp)?.getTime() || 0) - (parseDateValue(b?.timestamp)?.getTime() || 0)
-    )),
-  ]));
-}
-
 export function dedupeContacts(records, mapping = DEFAULT_MAPPING, options = {}) {
   const now = options.now || new Date();
   const dedupeBy = options.dedupeBy || "email_phone";
@@ -363,7 +340,6 @@ export function dedupeContacts(records, mapping = DEFAULT_MAPPING, options = {})
     const merged = {
       ...primary,
       properties: { ...(primary.properties || {}) },
-      propertiesWithHistory: mergePropertyHistories(informationOrder),
       updatedAt: newestInformation?.updatedAt
         || newestInformation?.properties?.lastmodifieddate
         || primary.updatedAt,
@@ -376,6 +352,13 @@ export function dedupeContacts(records, mapping = DEFAULT_MAPPING, options = {})
       for (const [key, value] of Object.entries(informationSource.properties || {})) {
         if (key !== "createdate" && clean(value)) merged.properties[key] = value;
       }
+    }
+    const directBookingDates = informationOrder
+      .map((record) => safeIso(record.properties?.[APPOINTMENT_SET_DATE_PROPERTY]))
+      .filter(Boolean)
+      .sort();
+    if (directBookingDates.length) {
+      merged.properties[APPOINTMENT_SET_DATE_PROPERTY] = directBookingDates[directBookingDates.length - 1];
     }
     canonical.push(merged);
 
@@ -409,17 +392,9 @@ function displayPropertyValue(propertyName, value, propertyDefinitions) {
   return parts.map((part) => options.get(part) || part).join(" + ");
 }
 
-function lifecycleAppointmentSetDates(record, propertyDefinitions) {
-  const entries = record?.propertiesWithHistory?.[LIFECYCLE_STAGE_PROPERTY];
-  if (!Array.isArray(entries)) return [];
-  return [...new Set(entries
-    .filter((entry) => {
-      const displayed = displayPropertyValue(LIFECYCLE_STAGE_PROPERTY, entry?.value, propertyDefinitions);
-      return normalizedComparableLabel(displayed || entry?.value) === "appointmentset";
-    })
-    .map((entry) => safeIso(entry?.timestamp))
-    .filter(Boolean))]
-    .sort();
+function lifecycleAppointmentSetDates(record, bookingDateProperty = APPOINTMENT_SET_DATE_PROPERTY) {
+  const directDate = safeIso(record?.properties?.[bookingDateProperty]);
+  return directDate ? [directDate] : [];
 }
 
 function titleCase(value) {
@@ -536,6 +511,7 @@ export function buildReport(records, config = {}) {
   const propertyDefinitions = config.propertyDefinitions || {};
   const owners = config.owners || {};
   const now = config.now || new Date();
+  const bookingDateProperty = config.bookingDateProperty || APPOINTMENT_SET_DATE_PROPERTY;
   const dedupeResult = dedupeContacts(records, mapping, {
     now,
     dedupeBy: config.dedupeBy || "email_phone",
@@ -561,7 +537,14 @@ export function buildReport(records, config = {}) {
     const name = [clean(props.firstname), clean(props.lastname)].filter(Boolean).join(" ") || "Unnamed lead";
     const email = clean(props.email);
     const phone = clean(props.phone) || clean(props.mobilephone);
-    const bookingDates = lifecycleAppointmentSetDates(record, propertyDefinitions);
+    const bookingDates = lifecycleAppointmentSetDates(record, bookingDateProperty);
+    const lifecycleStage = displayPropertyValue("lifecyclestage", props.lifecyclestage, propertyDefinitions)
+      || clean(props.lifecyclestage);
+    const lifecycleCategory = lifecycleStage
+      ? categoryFromStatus(lifecycleStage, "", "lifecycle")
+      : schedule.category;
+    const rawAppointmentStatus = displayPropertyValue(mapping.appointmentStatus, schedule.status, propertyDefinitions)
+      || clean(schedule.status);
     return {
       id: String(record.id),
       name,
@@ -569,12 +552,17 @@ export function buildReport(records, config = {}) {
       phone,
       service,
       serviceSegments,
-      scheduleCategory: schedule.category,
-      rawScheduleStatus: displayPropertyValue(mapping.appointmentStatus, schedule.status, propertyDefinitions) || clean(schedule.status),
+      scheduleCategory: lifecycleCategory,
+      rawScheduleStatus: lifecycleStage || rawAppointmentStatus,
+      lifecycleStage,
+      rawAppointmentStatus,
       appointmentDate: safeIso(schedule.date),
       appointmentType: displayPropertyValue(mapping.appointmentType, schedule.type, propertyDefinitions) || clean(schedule.type),
       scheduleSource: schedule.sourceLabel || titleCase(schedule.source) || "Contact property",
-      everScheduled: schedule.everScheduled,
+      everScheduled: bookingDates.length > 0
+        || (lifecycleStage
+          ? !["Not scheduled", "Other / review"].includes(lifecycleCategory)
+          : schedule.everScheduled),
       bookedEver: bookingDates.length > 0,
       firstBookedAt: bookingDates[0] || "",
       lastBookedAt: bookingDates[bookingDates.length - 1] || "",
@@ -649,7 +637,8 @@ export function buildReport(records, config = {}) {
       bookedFromNewLeads,
       bookingRate: uniqueLeads ? bookedFromNewLeads / uniqueLeads : 0,
       totalBookedInRange,
-      bookingHistoryAvailable: config.bookingHistoryAvailable !== false,
+      bookingHistoryAvailable: config.bookingDataAvailable !== false && config.bookingHistoryAvailable !== false,
+      bookingDateProperty,
       activeScheduled,
       completed,
       canceledNoShow,
