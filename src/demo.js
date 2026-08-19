@@ -104,4 +104,3 @@ export function buildDemoData(now = new Date()) {
     },
   };
 }
-
