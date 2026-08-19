@@ -4,7 +4,6 @@ import worker from "./src/index.js";
 const port = Number(process.env.PORT || 4173);
 const env = {
   ALLOW_UNAUTHENTICATED: "true",
-  DISABLE_EMBEDDED_TOKEN: "true",
   DASHBOARD_USERNAME: process.env.DASHBOARD_USERNAME || "velocity",
   DASHBOARD_PASSWORD: process.env.DASHBOARD_PASSWORD || "",
 };
