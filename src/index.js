@@ -1,5 +1,5 @@
 import { DASHBOARD_HTML, SETUP_HTML } from "./ui.js";
-import { buildReport, DEFAULT_MAPPING, recommendMapping } from "./report.js";
+import { buildReport, DEFAULT_MAPPING, isOfflineAhoyConnectionContact, recommendMapping } from "./report.js";
 import {
   addScheduleActivities,
   fetchContactProperties,
@@ -202,7 +202,12 @@ async function liveReport(request, env) {
   if (ownerResult.status === "fulfilled") owners = ownerMap(ownerResult.value);
   else warnings.push("Owner names were unavailable; owner IDs are shown.");
 
-  const contacts = await fetchContacts(token, start, end, mapping);
+  const fetchedContacts = await fetchContacts(token, start, end, mapping);
+  const contacts = fetchedContacts.filter((contact) => !isOfflineAhoyConnectionContact(contact));
+  const excludedAhoyConnection = fetchedContacts.length - contacts.length;
+  if (excludedAhoyConnection) {
+    warnings.push(`${excludedAhoyConnection} Offline Sources / Ahoy-Connection contact${excludedAhoyConnection === 1 ? "" : "s"} excluded before deduplication.`);
+  }
   const activityResult = await addScheduleActivities(token, contacts, scheduleSource);
   warnings.push(...activityResult.warnings);
 
@@ -215,6 +220,11 @@ async function liveReport(request, env) {
   });
   return json({
     ...report,
+    summary: {
+      ...report.summary,
+      fetchedRecords: fetchedContacts.length,
+      excludedAhoyConnection,
+    },
     mode: "live",
     range: { start, end },
     mapping,
