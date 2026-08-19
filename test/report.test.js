@@ -6,6 +6,7 @@ import {
   dedupeContacts,
   getScheduleSnapshot,
   isOfflineAhoyConnectionContact,
+  isLeaderSourceContact,
   recommendMapping,
 } from "../src/report.js";
 
@@ -25,6 +26,7 @@ function contact(id, properties = {}, updatedAt = "2026-08-01T00:00:00.000Z") {
     createdAt:"2026-08-01T00:00:00.000Z",
     updatedAt,
     properties:{ firstname:"Test", lastname:`Lead ${id}`, ...properties },
+    propertiesWithHistory:{},
     scheduleItems:[],
   };
 }
@@ -69,6 +71,31 @@ test("retains the oldest-created contact while using newer scheduling informatio
   assert.equal(result.records[0].properties.appointment_type, "In-home quote");
   assert.equal(result.records[0].properties.service, "Solar");
   assert.equal(result.records[0].createdAt, "2026-07-01T00:00:00.000Z");
+});
+
+test("merges lifecycle-stage history from newer duplicate contacts", () => {
+  const oldest = contact(1, { email:"same@example.com", service:"Roofing", lifecyclestage:"lead" });
+  oldest.createdAt = "2026-08-01T00:00:00.000Z";
+  oldest.propertiesWithHistory = {
+    lifecyclestage:[{ value:"lead", timestamp:"2026-08-01T00:00:00.000Z" }],
+  };
+  const newer = contact(2, { email:"same@example.com", service:"Roofing", lifecyclestage:"9001" });
+  newer.createdAt = "2026-08-19T10:00:00.000Z";
+  newer.propertiesWithHistory = {
+    lifecyclestage:[{ value:"9001", timestamp:"2026-08-19T18:12:00.000Z" }],
+  };
+
+  const report = buildReport([oldest, newer], {
+    mapping,
+    propertyDefinitions:{ lifecyclestage:{ options:[{ value:"9001", label:"Appointment Set" }] } },
+    rangeStart:"2026-08-19T04:00:00.000Z",
+    rangeEnd:"2026-08-20T04:00:00.000Z",
+    now:new Date("2026-08-20T12:00:00.000Z"),
+  });
+  assert.equal(report.summary.uniqueLeads, 0);
+  assert.equal(report.summary.totalBookedInRange, 1);
+  assert.equal(report.bookingRows[0].id, "1");
+  assert.equal(report.bookingRows[0].bookingDate, "2026-08-19T18:12:00.000Z");
 });
 
 test("deduplicates against earlier contacts before applying the selected create-date range", () => {
@@ -135,6 +162,51 @@ test("filters new leads by original create date and appointments by appointment 
   assert.equal(report.summary.uniqueLeads, 1);
   assert.equal(report.summary.appointmentSet, 1);
   assert.equal(report.statuses.find((item) => item.label === "Scheduled").count, 1);
+});
+
+test("separates cohort booking rate from all bookings made in the selected range", () => {
+  const olderBookedToday = contact(1, {
+    email:"older@example.com",
+    service:"Solar",
+    lifecyclestage:"9001",
+  });
+  olderBookedToday.createdAt = "2026-07-01T12:00:00.000Z";
+  olderBookedToday.propertiesWithHistory = {
+    lifecyclestage:[
+      { value:"lead", timestamp:"2026-07-01T12:00:00.000Z" },
+      { value:"9001", timestamp:"2026-08-19T18:12:00.000Z" },
+    ],
+  };
+  const newBookedLater = contact(2, {
+    email:"new-booked@example.com",
+    service:"Roofing",
+    lifecyclestage:"9001",
+  });
+  newBookedLater.createdAt = "2026-08-19T12:00:00.000Z";
+  newBookedLater.propertiesWithHistory = {
+    lifecyclestage:[
+      { value:"lead", timestamp:"2026-08-19T12:00:00.000Z" },
+      { value:"9001", timestamp:"2026-08-21T15:00:00.000Z" },
+    ],
+  };
+  const newNotBooked = contact(3, { email:"new@example.com", service:"Roofing", lifecyclestage:"lead" });
+  newNotBooked.createdAt = "2026-08-19T13:00:00.000Z";
+  newNotBooked.propertiesWithHistory = {
+    lifecyclestage:[{ value:"lead", timestamp:"2026-08-19T13:00:00.000Z" }],
+  };
+
+  const report = buildReport([olderBookedToday, newBookedLater, newNotBooked], {
+    mapping,
+    propertyDefinitions:{ lifecyclestage:{ options:[{ value:"9001", label:"Appointment Set" }] } },
+    rangeStart:"2026-08-19T04:00:00.000Z",
+    rangeEnd:"2026-08-20T04:00:00.000Z",
+    now:new Date("2026-08-22T12:00:00.000Z"),
+  });
+  assert.equal(report.summary.uniqueLeads, 2);
+  assert.equal(report.summary.bookedFromNewLeads, 1);
+  assert.equal(report.summary.bookingRate, 0.5);
+  assert.equal(report.summary.totalBookedInRange, 1);
+  assert.deepEqual(report.bookingRows.map((row) => row.id), ["1"]);
 });
 
 test("joins duplicate chains connected by email or phone", () => {
@@ -213,6 +285,17 @@ test("excludes only Offline Sources contacts whose drill-down is Ahoy-Connection
   assert.equal(isOfflineAhoyConnectionContact(contact(3, { hs_analytics_source:"PAID_SOCIAL", hs_analytics_source_data_1:"Ahoy-Connection" })), false);
   assert.equal(isOfflineAhoyConnectionContact(contact(7, { hs_analytics_source:"PAID_SOCIAL", hs_analytics_source_data_2:"48415030" })), false);
   assert.equal(isOfflineAhoyConnectionContact(contact(4, { hs_analytics_source:"OFFLINE", hs_analytics_source_data_1:"Trade show" })), false);
+});
+
+test("recognizes LEADer source labels and internal option values", () => {
+  const definitions = {
+    lead_source:{ options:[{ value:"81234", label:"LEADer" }, { value:"55", label:"Referral" }] },
+  };
+  assert.equal(isLeaderSourceContact(contact(1, { lead_source:"LEADer" }), ["lead_source"], definitions), true);
+  assert.equal(isLeaderSourceContact(contact(2, { lead_source:"leader" }), ["lead_source"], definitions), true);
+  assert.equal(isLeaderSourceContact(contact(3, { lead_source:"81234" }), ["lead_source"], definitions), true);
+  assert.equal(isLeaderSourceContact(contact(4, { lead_source:"55" }), ["lead_source"], definitions), false);
+  assert.equal(isLeaderSourceContact(contact(5, { lead_source:"Leaderboard" }), ["lead_source"], definitions), false);
 });
 
 test("recommends Velocity's service and original traffic source fields", () => {
