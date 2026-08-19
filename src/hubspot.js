@@ -139,7 +139,7 @@ async function searchContactWindow(token, startMs, endMs, properties, depth = 0)
   return results;
 }
 
-export async function fetchContacts(token, start, end, mapping) {
+export async function fetchContacts(token, start, end, mapping, extraProperties = []) {
   const startMs = new Date(start).getTime();
   const endMs = new Date(end).getTime();
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
@@ -154,8 +154,38 @@ export async function fetchContacts(token, start, end, mapping) {
     mapping.leadSource,
     mapping.leadSubsource,
     mapping.owner,
+    ...extraProperties,
   ]);
   return searchContactWindow(token, startMs, endMs, properties);
+}
+
+export async function addContactPropertyHistory(token, contacts, properties = ["lifecyclestage"]) {
+  const requestedProperties = unique(properties);
+  if (!contacts.length || !requestedProperties.length) {
+    return { requested: contacts.length, loaded: contacts.length };
+  }
+
+  let loaded = 0;
+  for (const batch of chunks(contacts, 100)) {
+    const payload = await hubspotJson(token, "/crm/v3/objects/contacts/batch/read", {
+      method: "POST",
+      body: JSON.stringify({
+        propertiesWithHistory: requestedProperties,
+        inputs: batch.map((contact) => ({ id: String(contact.id) })),
+      }),
+    });
+    const historiesById = new Map((payload.results || []).map((record) => [String(record.id), record]));
+    for (const contact of batch) {
+      const historyRecord = historiesById.get(String(contact.id));
+      if (!historyRecord) continue;
+      contact.propertiesWithHistory = {
+        ...(contact.propertiesWithHistory || {}),
+        ...(historyRecord.propertiesWithHistory || {}),
+      };
+      loaded += 1;
+    }
+  }
+  return { requested: contacts.length, loaded };
 }
 
 function parseAssociationResponse(payload) {
