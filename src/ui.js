@@ -503,11 +503,23 @@ export const DASHBOARD_HTML = `<!doctype html>
       }
 
       async function requestJson(path, options) {
-        var response = await fetch(path, Object.assign({ headers:{ "Content-Type":"application/json" } }, options || {}));
-        var payload = {};
-        try { payload = await response.json(); } catch (_) {}
-        if (!response.ok) throw new Error(payload.error || "The request could not be completed.");
-        return payload;
+        var controller = new AbortController();
+        var timeout = setTimeout(function () { controller.abort(); }, 45000);
+        try {
+          var response = await fetch(path, Object.assign({
+            headers:{ "Content-Type":"application/json" },
+            signal:controller.signal
+          }, options || {}));
+          var payload = {};
+          try { payload = await response.json(); } catch (_) {}
+          if (!response.ok) throw new Error(payload.error || "The request could not be completed.");
+          return payload;
+        } catch (error) {
+          if (error && error.name === "AbortError") throw new Error("HubSpot took too long to respond. Try Refresh again.");
+          throw error;
+        } finally {
+          clearTimeout(timeout);
+        }
       }
 
       function setLoading(active) {
@@ -735,7 +747,7 @@ export const DASHBOARD_HTML = `<!doctype html>
       }
 
       function maskedName(name) {
-        return name.split(/\s+/).filter(Boolean).map(function (part) { return part.charAt(0) + "."; }).join(" ");
+        return name.split(/\\s+/).filter(Boolean).map(function (part) { return part.charAt(0) + "."; }).join(" ");
       }
 
       function displayContact(row) {
@@ -838,7 +850,7 @@ export const DASHBOARD_HTML = `<!doctype html>
           var contact = displayContact(row);
           lines.push([row.id,contact.name,contact.email,contact.phone,row.service,row.scheduleCategory,row.rawScheduleStatus,row.appointmentDate,row.appointmentType,row.scheduleSource,row.leadSource,row.leadSubsource,row.owner,row.createdAt,row.duplicateCount].map(csvCell).join(","));
         });
-        var blob = new Blob(["\ufeff" + lines.join("\r\n")], { type:"text/csv;charset=utf-8" });
+        var blob = new Blob(["\ufeff" + lines.join("\\r\\n")], { type:"text/csv;charset=utf-8" });
         var url = URL.createObjectURL(blob);
         var link = document.createElement("a");
         link.href = url;
@@ -891,4 +903,3 @@ export const DASHBOARD_HTML = `<!doctype html>
   </script>
 </body>
 </html>`;
-
