@@ -10,6 +10,7 @@ const SCHEDULE_CATEGORIES = [
 
 const BLANKISH = new Set(["", "null", "undefined", "n/a", "na", "none", "unknown", "-"]);
 const AHOY_CONNECTION_INTERNAL_VALUES = new Set(["48415030"]);
+const LIFECYCLE_STAGE_PROPERTY = "lifecyclestage";
 
 export const STANDARD_PROPERTIES = [
   "firstname",
@@ -63,6 +64,27 @@ export function isOfflineAhoyConnectionContact(record) {
   const isAhoyConnection = rawDetails.some((value) => AHOY_CONNECTION_INTERNAL_VALUES.has(value))
     || details.some((value) => value.includes("ahoy connection"));
   return isOffline && isAhoyConnection;
+}
+
+function normalizedComparableLabel(value) {
+  return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+export function isLeaderSourceContact(record, sourceProperties = [], propertyDefinitions = {}) {
+  const props = record?.properties || {};
+  const propertyNames = [...new Set([
+    ...sourceProperties,
+    "lead_source",
+    "leadsource",
+  ].filter(Boolean))];
+  return propertyNames.some((propertyName) => {
+    const rawValue = clean(props[propertyName]);
+    if (!rawValue) return false;
+    const displayedValue = displayPropertyValue(propertyName, rawValue, propertyDefinitions);
+    return [rawValue, displayedValue]
+      .flatMap((value) => String(value).split(";"))
+      .some((value) => normalizedComparableLabel(value) === "leader");
+  });
 }
 
 export function normalizeEmail(value) {
@@ -270,6 +292,30 @@ function scheduleItemKey(item) {
     .join("\u0000");
 }
 
+function propertyHistoryItemKey(item) {
+  return [item?.value, item?.timestamp, item?.sourceType, item?.sourceId, item?.updatedByUserId]
+    .map(clean)
+    .join("\u0000");
+}
+
+function mergePropertyHistories(records) {
+  const histories = {};
+  for (const record of records) {
+    for (const [propertyName, entries] of Object.entries(record.propertiesWithHistory || {})) {
+      if (!histories[propertyName]) histories[propertyName] = new Map();
+      for (const entry of Array.isArray(entries) ? entries : []) {
+        histories[propertyName].set(propertyHistoryItemKey(entry), entry);
+      }
+    }
+  }
+  return Object.fromEntries(Object.entries(histories).map(([propertyName, entries]) => [
+    propertyName,
+    [...entries.values()].sort((a, b) => (
+      (parseDateValue(a?.timestamp)?.getTime() || 0) - (parseDateValue(b?.timestamp)?.getTime() || 0)
+    )),
+  ]));
+}
+
 export function dedupeContacts(records, mapping = DEFAULT_MAPPING, options = {}) {
   const now = options.now || new Date();
   const dedupeBy = options.dedupeBy || "email_phone";
@@ -317,6 +363,7 @@ export function dedupeContacts(records, mapping = DEFAULT_MAPPING, options = {})
     const merged = {
       ...primary,
       properties: { ...(primary.properties || {}) },
+      propertiesWithHistory: mergePropertyHistories(informationOrder),
       updatedAt: newestInformation?.updatedAt
         || newestInformation?.properties?.lastmodifieddate
         || primary.updatedAt,
@@ -362,6 +409,19 @@ function displayPropertyValue(propertyName, value, propertyDefinitions) {
   return parts.map((part) => options.get(part) || part).join(" + ");
 }
 
+function lifecycleAppointmentSetDates(record, propertyDefinitions) {
+  const entries = record?.propertiesWithHistory?.[LIFECYCLE_STAGE_PROPERTY];
+  if (!Array.isArray(entries)) return [];
+  return [...new Set(entries
+    .filter((entry) => {
+      const displayed = displayPropertyValue(LIFECYCLE_STAGE_PROPERTY, entry?.value, propertyDefinitions);
+      return normalizedComparableLabel(displayed || entry?.value) === "appointmentset";
+    })
+    .map((entry) => safeIso(entry?.timestamp))
+    .filter(Boolean))]
+    .sort();
+}
+
 function titleCase(value) {
   const normalized = clean(value).replace(/[_-]+/g, " ");
   if (!normalized) return "";
@@ -405,6 +465,7 @@ function buildServiceBreakdown(rows) {
     const item = services.get(row.service) || {
       service: row.service,
       leads: 0,
+      bookedFromNewLeads: 0,
       appointmentSet: 0,
       scheduled: 0,
       completed: 0,
@@ -412,6 +473,7 @@ function buildServiceBreakdown(rows) {
       notScheduled: 0,
     };
     item.leads += 1;
+    if (row.bookedEver) item.bookedFromNewLeads += 1;
     if (row.everScheduled) item.appointmentSet += 1;
     if (["Scheduled", "Rescheduled"].includes(row.scheduleCategory)) item.scheduled += 1;
     if (row.scheduleCategory === "Completed") item.completed += 1;
@@ -420,22 +482,31 @@ function buildServiceBreakdown(rows) {
     services.set(row.service, item);
   });
   return [...services.values()]
-    .map((item) => ({ ...item, appointmentRate: item.leads ? item.appointmentSet / item.leads : 0 }))
+    .map((item) => ({
+      ...item,
+      appointmentRate: item.leads ? item.appointmentSet / item.leads : 0,
+      bookingRate: item.leads ? item.bookedFromNewLeads / item.leads : 0,
+    }))
     .sort((a, b) => b.leads - a.leads || a.service.localeCompare(b.service));
 }
 
-function buildSegmentBreakdown(rows, appointmentRows = rows) {
+function buildSegmentBreakdown(rows, appointmentRows = rows, bookingRows = []) {
   return ["Roofing", "Solar"].map((segment) => {
     const segmentRows = rows.filter((row) => row.serviceSegments.includes(segment));
     const segmentAppointments = appointmentRows.filter((row) => row.serviceSegments.includes(segment));
+    const segmentBookings = bookingRows.filter((row) => row.serviceSegments.includes(segment));
     const leads = segmentRows.length;
     const appointmentSet = segmentAppointments.length;
     const newLeadsEverScheduled = segmentRows.filter((row) => row.everScheduled).length;
+    const bookedFromNewLeads = segmentRows.filter((row) => row.bookedEver).length;
     return {
       segment,
       leads,
       appointmentSet,
       appointmentRate: leads ? newLeadsEverScheduled / leads : 0,
+      bookedFromNewLeads,
+      totalBookedInRange: segmentBookings.length,
+      bookingRate: leads ? bookedFromNewLeads / leads : 0,
       activeScheduled: segmentAppointments.filter((row) => ["Scheduled", "Rescheduled"].includes(row.scheduleCategory)).length,
       completed: segmentAppointments.filter((row) => row.scheduleCategory === "Completed").length,
       notScheduled: segmentRows.filter((row) => !row.everScheduled).length,
@@ -443,18 +514,18 @@ function buildSegmentBreakdown(rows, appointmentRows = rows) {
   });
 }
 
-function buildDailyTrend(rows, appointmentRows = []) {
+function buildDailyTrend(rows, bookingRows = []) {
   const days = new Map();
   rows.forEach((row) => {
     const day = row.createdAt ? row.createdAt.slice(0, 10) : "Unknown";
-    const item = days.get(day) || { date: day, leads: 0, appointmentSet: 0 };
+    const item = days.get(day) || { date: day, leads: 0, booked: 0 };
     item.leads += 1;
     days.set(day, item);
   });
-  appointmentRows.forEach((row) => {
-    const day = row.appointmentDate ? row.appointmentDate.slice(0, 10) : "Unknown";
-    const item = days.get(day) || { date: day, leads: 0, appointmentSet: 0 };
-    item.appointmentSet += 1;
+  bookingRows.forEach((row) => {
+    const day = row.bookingDate ? row.bookingDate.slice(0, 10) : "Unknown";
+    const item = days.get(day) || { date: day, leads: 0, booked: 0 };
+    item.booked += 1;
     days.set(day, item);
   });
   return [...days.values()].sort((a, b) => a.date.localeCompare(b.date));
@@ -490,6 +561,7 @@ export function buildReport(records, config = {}) {
     const name = [clean(props.firstname), clean(props.lastname)].filter(Boolean).join(" ") || "Unnamed lead";
     const email = clean(props.email);
     const phone = clean(props.phone) || clean(props.mobilephone);
+    const bookingDates = lifecycleAppointmentSetDates(record, propertyDefinitions);
     return {
       id: String(record.id),
       name,
@@ -503,6 +575,10 @@ export function buildReport(records, config = {}) {
       appointmentType: displayPropertyValue(mapping.appointmentType, schedule.type, propertyDefinitions) || clean(schedule.type),
       scheduleSource: schedule.sourceLabel || titleCase(schedule.source) || "Contact property",
       everScheduled: schedule.everScheduled,
+      bookedEver: bookingDates.length > 0,
+      firstBookedAt: bookingDates[0] || "",
+      lastBookedAt: bookingDates[bookingDates.length - 1] || "",
+      bookingDates,
       leadSource: sourceLabel(rawSource),
       leadSubsource: subsource,
       owner: owners[ownerId] || (ownerId ? `Owner ${ownerId}` : "Unassigned owner"),
@@ -525,9 +601,18 @@ export function buildReport(records, config = {}) {
     Boolean(row.appointmentDate)
       && (!hasCreatedRange || dateValueInRange(row.appointmentDate, config.rangeStart, config.rangeEnd))
   )).sort((a, b) => b.appointmentDate.localeCompare(a.appointmentDate));
+  const bookingRows = allRows.flatMap((row) => {
+    const datesInRange = row.bookingDates.filter((date) => (
+      !hasCreatedRange || dateValueInRange(date, config.rangeStart, config.rangeEnd)
+    ));
+    if (!datesInRange.length) return [];
+    return [{ ...row, bookingDate: datesInRange[datesInRange.length - 1] }];
+  }).sort((a, b) => b.bookingDate.localeCompare(a.bookingDate));
 
   const uniqueLeads = rows.length;
   const newLeadsEverScheduled = rows.filter((row) => row.everScheduled).length;
+  const bookedFromNewLeads = rows.filter((row) => row.bookedEver).length;
+  const totalBookedInRange = bookingRows.length;
   const appointmentSet = appointmentRows.length;
   const activeScheduled = appointmentRows.filter((row) => ["Scheduled", "Rescheduled"].includes(row.scheduleCategory)).length;
   const completed = appointmentRows.filter((row) => row.scheduleCategory === "Completed").length;
@@ -561,6 +646,10 @@ export function buildReport(records, config = {}) {
       appointmentSet,
       newLeadsEverScheduled,
       appointmentRate: uniqueLeads ? newLeadsEverScheduled / uniqueLeads : 0,
+      bookedFromNewLeads,
+      bookingRate: uniqueLeads ? bookedFromNewLeads / uniqueLeads : 0,
+      totalBookedInRange,
+      bookingHistoryAvailable: config.bookingHistoryAvailable !== false,
       activeScheduled,
       completed,
       canceledNoShow,
@@ -572,16 +661,17 @@ export function buildReport(records, config = {}) {
     })),
     rawStatuses: countBy(appointmentRows, (row) => row.rawScheduleStatus || row.scheduleCategory),
     services: buildServiceBreakdown(rows),
-    serviceSegments: buildSegmentBreakdown(rows, appointmentRows),
+    serviceSegments: buildSegmentBreakdown(rows, appointmentRows, bookingRows),
     sources: countBy(rows, (row) => row.leadSource),
     owners: countBy(rows, (row) => row.owner),
-    dailyTrend: buildDailyTrend(rows, appointmentRows),
+    dailyTrend: buildDailyTrend(rows, bookingRows),
     dataQuality: {
       noContactMethod: rows.filter((row) => !row.email && !row.phone).length,
       missingService: rows.filter((row) => row.service === "Unassigned service").length,
       statusesToReview: rows.filter((row) => row.scheduleCategory === "Other / review").length,
     },
     duplicateAudit,
+    bookingRows,
     appointmentRows,
     rows,
   };
