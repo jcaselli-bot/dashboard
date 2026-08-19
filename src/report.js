@@ -42,6 +42,25 @@ function clean(value) {
   return BLANKISH.has(stringValue.toLowerCase()) ? "" : stringValue;
 }
 
+export function classifyServiceSegments(value) {
+  const normalized = clean(value).toLowerCase();
+  const segments = [];
+  if (/roof|shingle|storm|insurance/.test(normalized)) segments.push("Roofing");
+  if (/solar|photovoltaic|\bpv\b/.test(normalized)) segments.push("Solar");
+  return segments;
+}
+
+export function isOfflineAhoyConnectionContact(record) {
+  const props = record?.properties || {};
+  const source = clean(props.hs_analytics_source).toLowerCase().replace(/[^a-z0-9]+/g, " ");
+  const details = [
+    props.hs_analytics_source_data_1,
+    props.hs_analytics_source_data_2,
+  ].map((value) => clean(value).toLowerCase().replace(/[^a-z0-9]+/g, " "));
+  const isOffline = source === "offline" || source === "offline sources";
+  return isOffline && details.includes("ahoy connection");
+}
+
 export function normalizeEmail(value) {
   return clean(value).toLowerCase().replace(/^mailto:/, "");
 }
@@ -65,8 +84,11 @@ export function parseDateValue(value) {
 function categoryFromStatus(status, dateValue, source = "property") {
   const value = clean(status).toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
   if (/no\s*show|noshow|did not show|missed/.test(value)) return "No-show";
+  if (/no\s*sit|porched/.test(value)) return "No-show";
   if (/cancel|declin|called off/.test(value)) return "Canceled";
+  if (/^dq$|disqualif|credit fail/.test(value)) return "Canceled";
   if (/resched|rebook/.test(value)) return "Rescheduled";
+  if (/^sold$|^sat$|^sit$/.test(value)) return "Completed";
   if (/complete|completed|held|showed|attended|met|finished|done/.test(value)) return "Completed";
   if (/scheduled|booked|confirmed|appointment set|appt set|set appointment/.test(value)) return "Scheduled";
   if (/not scheduled|unscheduled|no appointment|not set|new lead|new|open|contacting|attempting|follow.?up|unqualified|bad lead|duplicate/.test(value)) {
@@ -144,6 +166,14 @@ function contactCompleteness(record, mapping) {
   ].filter(clean).length;
 }
 
+function recordCreatedTime(record) {
+  return parseDateValue(record.createdAt || record.properties?.createdate)?.getTime();
+}
+
+function recordUpdatedTime(record) {
+  return parseDateValue(record.updatedAt || record.properties?.lastmodifieddate)?.getTime();
+}
+
 export function schedulingScore(record, mapping = DEFAULT_MAPPING, now = new Date()) {
   const snapshot = getScheduleSnapshot(record, mapping, now);
   const categoryPoints = {
@@ -184,15 +214,40 @@ class UnionFind {
 
 function canonicalComparator(mapping, now) {
   return (a, b) => {
+    const aCreated = recordCreatedTime(a);
+    const bCreated = recordCreatedTime(b);
+    const aHasCreated = Number.isFinite(aCreated);
+    const bHasCreated = Number.isFinite(bCreated);
+    if (aHasCreated && bHasCreated && aCreated !== bCreated) return aCreated - bCreated;
+    if (aHasCreated !== bHasCreated) return aHasCreated ? -1 : 1;
+
     const scheduleDelta = schedulingScore(b, mapping, now) - schedulingScore(a, mapping, now);
     if (scheduleDelta) return scheduleDelta;
     const dataDelta = contactCompleteness(b, mapping) - contactCompleteness(a, mapping);
     if (dataDelta) return dataDelta;
-    const updatedDelta = (parseDateValue(b.updatedAt || b.properties?.lastmodifieddate)?.getTime() || 0)
-      - (parseDateValue(a.updatedAt || a.properties?.lastmodifieddate)?.getTime() || 0);
+    const updatedDelta = (recordUpdatedTime(b) || 0) - (recordUpdatedTime(a) || 0);
     if (updatedDelta) return updatedDelta;
     return String(a.id).localeCompare(String(b.id));
   };
+}
+
+function informationRecencyComparator(a, b) {
+  const aUpdated = recordUpdatedTime(a) ?? recordCreatedTime(a) ?? 0;
+  const bUpdated = recordUpdatedTime(b) ?? recordCreatedTime(b) ?? 0;
+  if (aUpdated !== bUpdated) return aUpdated - bUpdated;
+
+  const aCreated = recordCreatedTime(a) ?? 0;
+  const bCreated = recordCreatedTime(b) ?? 0;
+  if (aCreated !== bCreated) return aCreated - bCreated;
+  return String(a.id).localeCompare(String(b.id));
+}
+
+function scheduleItemKey(item) {
+  const stableId = clean(item?.id);
+  if (stableId) return [item?.source, stableId].map(clean).join("\u0000");
+  return [item?.source, item?.status, item?.date, item?.type, item?.title]
+    .map(clean)
+    .join("\u0000");
 }
 
 export function dedupeContacts(records, mapping = DEFAULT_MAPPING, options = {}) {
@@ -225,30 +280,34 @@ export function dedupeContacts(records, mapping = DEFAULT_MAPPING, options = {})
     groups.get(root).push(record);
   });
 
-  const schedulingFields = new Set([
-    mapping.appointmentStatus,
-    mapping.appointmentDate,
-    mapping.appointmentType,
-  ].filter(Boolean));
-
   const canonical = [];
   const duplicateGroups = [];
   for (const group of groups.values()) {
     const sorted = [...group].sort(canonicalComparator(mapping, now));
     const primary = sorted[0];
+    const informationOrder = [...group].sort(informationRecencyComparator);
+    const newestInformation = informationOrder[informationOrder.length - 1];
+    const scheduleItemsByKey = new Map();
+    for (const record of informationOrder) {
+      for (const item of record.scheduleItems || []) {
+        scheduleItemsByKey.set(scheduleItemKey(item), item);
+      }
+    }
+    const scheduleItems = [...scheduleItemsByKey.values()];
     const merged = {
       ...primary,
       properties: { ...(primary.properties || {}) },
-      scheduleItems: [...(primary.scheduleItems || [])],
+      updatedAt: newestInformation?.updatedAt
+        || newestInformation?.properties?.lastmodifieddate
+        || primary.updatedAt,
+      scheduleItems,
       duplicateIds: sorted.slice(1).map((record) => String(record.id)),
       duplicateCount: Math.max(0, sorted.length - 1),
     };
 
-    for (const secondary of sorted.slice(1)) {
-      for (const [key, value] of Object.entries(secondary.properties || {})) {
-        if (!schedulingFields.has(key) && !clean(merged.properties[key]) && clean(value)) {
-          merged.properties[key] = value;
-        }
+    for (const informationSource of informationOrder) {
+      for (const [key, value] of Object.entries(informationSource.properties || {})) {
+        if (key !== "createdate" && clean(value)) merged.properties[key] = value;
       }
     }
     canonical.push(merged);
@@ -291,15 +350,15 @@ function titleCase(value) {
 
 function sourceLabel(raw) {
   const known = {
-    ORGANIC_SEARCH: "Organic search",
-    PAID_SEARCH: "Paid search",
-    PAID_SOCIAL: "Paid social",
-    SOCIAL_MEDIA: "Organic social",
-    REFERRALS: "Referral",
-    EMAIL_MARKETING: "Email marketing",
-    DIRECT_TRAFFIC: "Direct traffic",
-    OFFLINE: "Offline / integrations",
-    OTHER_CAMPAIGNS: "Other campaigns",
+    ORGANIC_SEARCH: "Organic Search",
+    PAID_SEARCH: "Paid Search",
+    PAID_SOCIAL: "Paid Social",
+    SOCIAL_MEDIA: "Organic Social",
+    REFERRALS: "Referrals",
+    EMAIL_MARKETING: "Email Marketing",
+    DIRECT_TRAFFIC: "Direct Traffic",
+    OFFLINE: "Offline Sources",
+    OTHER_CAMPAIGNS: "Other Campaigns",
   };
   return known[raw] || titleCase(raw) || "Unknown source";
 }
@@ -345,6 +404,23 @@ function buildServiceBreakdown(rows) {
     .sort((a, b) => b.leads - a.leads || a.service.localeCompare(b.service));
 }
 
+function buildSegmentBreakdown(rows) {
+  return ["Roofing", "Solar"].map((segment) => {
+    const segmentRows = rows.filter((row) => row.serviceSegments.includes(segment));
+    const leads = segmentRows.length;
+    const appointmentSet = segmentRows.filter((row) => row.everScheduled).length;
+    return {
+      segment,
+      leads,
+      appointmentSet,
+      appointmentRate: leads ? appointmentSet / leads : 0,
+      activeScheduled: segmentRows.filter((row) => ["Scheduled", "Rescheduled"].includes(row.scheduleCategory)).length,
+      completed: segmentRows.filter((row) => row.scheduleCategory === "Completed").length,
+      notScheduled: segmentRows.filter((row) => !row.everScheduled).length,
+    };
+  });
+}
+
 function buildDailyTrend(rows) {
   const days = new Map();
   rows.forEach((row) => {
@@ -371,6 +447,8 @@ export function buildReport(records, config = {}) {
     const props = record.properties || {};
     const schedule = getScheduleSnapshot(record, mapping, now);
     const rawService = displayPropertyValue(mapping.service, props[mapping.service], propertyDefinitions);
+    const service = rawService || "Unassigned service";
+    const serviceSegments = classifyServiceSegments(service);
     const rawSource = displayPropertyValue(mapping.leadSource, props[mapping.leadSource], propertyDefinitions);
     const subsource = displayPropertyValue(mapping.leadSubsource, props[mapping.leadSubsource], propertyDefinitions);
     const ownerId = clean(props[mapping.owner]);
@@ -382,7 +460,8 @@ export function buildReport(records, config = {}) {
       name,
       email,
       phone,
-      service: rawService || "Unassigned service",
+      service,
+      serviceSegments,
       scheduleCategory: schedule.category,
       rawScheduleStatus: displayPropertyValue(mapping.appointmentStatus, schedule.status, propertyDefinitions) || clean(schedule.status),
       appointmentDate: safeIso(schedule.date),
@@ -419,7 +498,7 @@ export function buildReport(records, config = {}) {
       keptEmail: kept?.email || "",
       keptPhone: kept?.phone || "",
       removedIds: group.removedIds,
-      reason: "Kept the record with the most complete appointment data; ties use overall completeness, then most recent update.",
+      reason: "Kept the oldest-created contact and consolidated the latest nonblank details, including scheduling data, from its duplicates.",
     };
   });
 
@@ -443,6 +522,7 @@ export function buildReport(records, config = {}) {
     })),
     rawStatuses: countBy(rows, (row) => row.rawScheduleStatus || row.scheduleCategory),
     services: buildServiceBreakdown(rows),
+    serviceSegments: buildSegmentBreakdown(rows),
     sources: countBy(rows, (row) => row.leadSource),
     owners: countBy(rows, (row) => row.owner),
     dailyTrend: buildDailyTrend(rows),
@@ -457,6 +537,7 @@ export function buildReport(records, config = {}) {
 }
 
 export function recommendMapping(properties = []) {
+  const has = (name) => properties.some((property) => property.name === name);
   const scored = (patterns, type) => properties
     .map((property) => {
       const text = `${property.name || ""} ${property.label || ""}`.toLowerCase();
@@ -472,17 +553,14 @@ export function recommendMapping(properties = []) {
     .sort((a, b) => b.score - a.score)[0]?.property?.name || "";
 
   return {
-    service: scored([[/\bservice\b/, 8], [/project type/, 6], [/install type/, 5], [/product/, 3], [/vertical/, 3]]),
-    appointmentStatus: scored([[/appointment status/, 10], [/appt status/, 9], [/booking status/, 8], [/disposition/, 5], [/schedule.*status/, 7]]),
-    appointmentDate: scored([[/appointment date/, 10], [/appointment time/, 9], [/appt date/, 9], [/scheduled date/, 7], [/meeting date/, 5]], "datetime"),
-    appointmentType: scored([[/appointment type/, 10], [/appt type/, 9], [/meeting type/, 6], [/consultation type/, 5]]),
-    leadSource: properties.some((property) => property.name === "hs_analytics_source")
-      ? "hs_analytics_source"
-      : scored([[/original source/, 8], [/lead source/, 7], [/source/, 2]]),
-    leadSubsource: properties.some((property) => property.name === "hs_analytics_source_data_1")
-      ? "hs_analytics_source_data_1"
-      : scored([[/source detail/, 7], [/subsource/, 7], [/campaign/, 3]]),
-    owner: properties.some((property) => property.name === "hubspot_owner_id") ? "hubspot_owner_id" : "",
+    service: has("appointment_set_as")
+      ? "appointment_set_as"
+      : scored([[/appointment set as/, 12], [/appointment type/, 10], [/\bservice\b/, 8], [/project type/, 6], [/install type/, 5], [/product/, 3], [/vertical/, 3]]),
+    appointmentStatus: has("appointment_status") ? "appointment_status" : scored([[/appointment status/, 10], [/appt status/, 9], [/booking status/, 8], [/disposition/, 5], [/schedule.*status/, 7]]),
+    appointmentDate: has("appointment_date__time") ? "appointment_date__time" : scored([[/appointment date/, 10], [/appointment time/, 9], [/appt date/, 9], [/scheduled date/, 7], [/meeting date/, 5]], "datetime"),
+    appointmentType: has("appointment_type_2") ? "appointment_type_2" : scored([[/appointment type/, 10], [/appt type/, 9], [/meeting type/, 6], [/consultation type/, 5]]),
+    leadSource: has("hs_analytics_source") ? "hs_analytics_source" : scored([[/original source/, 8], [/lead source/, 7], [/source/, 2]]),
+    leadSubsource: has("hs_analytics_source_data_1") ? "hs_analytics_source_data_1" : scored([[/source detail/, 7], [/subsource/, 7], [/campaign/, 3]]),
+    owner: has("hubspot_owner_id") ? "hubspot_owner_id" : "",
   };
 }
-
