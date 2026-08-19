@@ -3,8 +3,7 @@
 A secure, read-only Cloudflare Worker dashboard for HubSpot contact reporting. It shows:
 
 - unique new leads for any date range, defaulting to the past three weeks;
-- booking totals and booking rate based on HubSpot's calculated **Date entered Appointment Set** value;
-- appointments and normalized outcomes by their actual scheduled appointment date;
+- two appointment totals: new leads with an appointment date and appointments dated in the selected range;
 - the current HubSpot **Lifecycle stage** for each appointment occurring in the selected range, normalized into Scheduled, Rescheduled, Completed, Canceled, No-show, Other / review, or Not scheduled;
 - lead and appointment performance by service;
 - lead source mix, owner, detailed records, filters, privacy masking, and CSV export;
@@ -33,7 +32,7 @@ Contacts are excluded as Ahoy-Connection records when Original Traffic Source is
 
 Contacts whose mapped **Lead source** property is `LEADer` are also excluded before duplicate grouping. The dashboard recognizes both the displayed option label and its internal HubSpot value.
 
-The calculated **Date entered Appointment Set** value from every duplicate is consolidated into the retained oldest contact. The dashboard keeps the latest nonblank booking date in a duplicate group, so an Appointment Set change on a newer duplicate still counts without changing the original create date used for the new-lead cohort.
+Appointment details from every duplicate are consolidated into the retained oldest contact, so a date added to a newer duplicate still counts without changing the original create date used for the new-lead cohort.
 
 ## HubSpot setup
 
@@ -97,7 +96,7 @@ Open **Configure** and map these HubSpot contact properties:
 
 The dashboard reads the property definitions in your account and recommends likely matches. You can enter an internal property name manually if needed. These mappings are saved to the Worker's Cloudflare Durable Object, with browser storage as a fallback; the HubSpot token remains server-side.
 
-No booking-date property needs to be mapped. The dashboard automatically fetches HubSpot's calculated **Date entered Appointment Set** property, whose internal name in this portal is `hs_v2_date_entered_1387807760`. HubSpot updates this value when a contact enters Appointment Set, so the person booking the appointment does not need to fill in another field.
+The mapped appointment-date field supplies both visible appointment totals. Lifecycle stage supplies the status breakdown.
 
 For scheduling source, choose:
 
@@ -141,11 +140,7 @@ The test suite covers oldest-created duplicate selection, newer-information cons
 - **Appointment in range:** a deduplicated contact whose selected appointment date falls inside the chosen range, regardless of when the original lead was created.
 - **New lead with appointment date:** a unique new lead whose retained original create date is inside the chosen range and whose mapped appointment-date field is filled. The appointment itself may occur outside the chosen range.
 - **Appointments dated in range:** a deduplicated contact whose mapped appointment date falls inside the chosen range, regardless of its original create date.
-- **Active scheduled:** an appointment dated inside the chosen range whose current outcome is scheduled or rescheduled.
-- **Booked from new leads:** unique new leads created inside the chosen range whose **Date entered Appointment Set** property has a value, even if that date is later than the selected range.
-- **New-lead booking rate:** booked-from-new-leads divided by all unique new leads in the chosen range.
-- **Total booked in range:** deduplicated contacts whose **Date entered Appointment Set** falls during the chosen dates, regardless of their original create date.
-- **Appointments occurring:** the same appointment-date-only population shown as **Appointments dated in range**. This is separate from both contact create date and booking date.
+- **Appointments occurring:** the same appointment-date-only population shown as **Appointments dated in range**. This is separate from contact create date.
 - **Lifecycle stage breakdown:** appointments occurring in the chosen range grouped from their current `lifecyclestage` value. The dashboard translates HubSpot internal option values to their displayed labels before categorizing them; mapped appointment status is used only as a fallback when lifecycle stage is blank.
 
 HubSpot search can return up to 200 records per page and 10,000 records per query. The integration automatically splits large date windows before that limit is reached.

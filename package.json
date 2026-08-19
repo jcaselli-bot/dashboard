@@ -1,6 +1,6 @@
 {
   "name": "velocity-lead-dashboard",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "private": true,
   "type": "module",
   "description": "Read-only HubSpot dashboard for deduplicated lead, service, and appointment reporting.",
