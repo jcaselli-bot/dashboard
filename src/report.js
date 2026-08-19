@@ -441,6 +441,7 @@ function buildServiceBreakdown(rows) {
       service: row.service,
       leads: 0,
       bookedFromNewLeads: 0,
+      newLeadsWithAppointmentDate: 0,
       appointmentSet: 0,
       scheduled: 0,
       completed: 0,
@@ -449,7 +450,8 @@ function buildServiceBreakdown(rows) {
     };
     item.leads += 1;
     if (row.bookedEver) item.bookedFromNewLeads += 1;
-    if (row.everScheduled) item.appointmentSet += 1;
+    if (row.appointmentDate) item.newLeadsWithAppointmentDate += 1;
+    if (row.appointmentDate) item.appointmentSet += 1;
     if (["Scheduled", "Rescheduled"].includes(row.scheduleCategory)) item.scheduled += 1;
     if (row.scheduleCategory === "Completed") item.completed += 1;
     if (["Canceled", "No-show"].includes(row.scheduleCategory)) item.canceledNoShow += 1;
@@ -459,7 +461,7 @@ function buildServiceBreakdown(rows) {
   return [...services.values()]
     .map((item) => ({
       ...item,
-      appointmentRate: item.leads ? item.appointmentSet / item.leads : 0,
+      appointmentRate: item.leads ? item.newLeadsWithAppointmentDate / item.leads : 0,
       bookingRate: item.leads ? item.bookedFromNewLeads / item.leads : 0,
     }))
     .sort((a, b) => b.leads - a.leads || a.service.localeCompare(b.service));
@@ -472,13 +474,15 @@ function buildSegmentBreakdown(rows, appointmentRows = rows, bookingRows = []) {
     const segmentBookings = bookingRows.filter((row) => row.serviceSegments.includes(segment));
     const leads = segmentRows.length;
     const appointmentSet = segmentAppointments.length;
-    const newLeadsEverScheduled = segmentRows.filter((row) => row.everScheduled).length;
+    const newLeadsWithAppointmentDate = segmentRows.filter((row) => Boolean(row.appointmentDate)).length;
     const bookedFromNewLeads = segmentRows.filter((row) => row.bookedEver).length;
     return {
       segment,
       leads,
       appointmentSet,
-      appointmentRate: leads ? newLeadsEverScheduled / leads : 0,
+      newLeadsWithAppointmentDate,
+      appointmentsDatedInRange: segmentAppointments.length,
+      appointmentRate: leads ? newLeadsWithAppointmentDate / leads : 0,
       bookedFromNewLeads,
       totalBookedInRange: segmentBookings.length,
       bookingRate: leads ? bookedFromNewLeads / leads : 0,
@@ -599,9 +603,11 @@ export function buildReport(records, config = {}) {
 
   const uniqueLeads = rows.length;
   const newLeadsEverScheduled = rows.filter((row) => row.everScheduled).length;
+  const newLeadsWithAppointmentDate = rows.filter((row) => Boolean(row.appointmentDate)).length;
   const bookedFromNewLeads = rows.filter((row) => row.bookedEver).length;
   const totalBookedInRange = bookingRows.length;
-  const appointmentSet = appointmentRows.length;
+  const appointmentsDatedInRange = appointmentRows.length;
+  const appointmentSet = appointmentsDatedInRange;
   const activeScheduled = appointmentRows.filter((row) => ["Scheduled", "Rescheduled"].includes(row.scheduleCategory)).length;
   const completed = appointmentRows.filter((row) => row.scheduleCategory === "Completed").length;
   const canceledNoShow = appointmentRows.filter((row) => ["Canceled", "No-show"].includes(row.scheduleCategory)).length;
@@ -632,8 +638,11 @@ export function buildReport(records, config = {}) {
       duplicatesRemoved: Math.max(0, inputRecordsInRange.length - uniqueLeads),
       duplicateGroups: duplicateGroupsInRange.length,
       appointmentSet,
+      newLeadsWithAppointmentDate,
+      appointmentsDatedInRange,
       newLeadsEverScheduled,
-      appointmentRate: uniqueLeads ? newLeadsEverScheduled / uniqueLeads : 0,
+      newLeadAppointmentDateRate: uniqueLeads ? newLeadsWithAppointmentDate / uniqueLeads : 0,
+      appointmentRate: uniqueLeads ? newLeadsWithAppointmentDate / uniqueLeads : 0,
       bookedFromNewLeads,
       bookingRate: uniqueLeads ? bookedFromNewLeads / uniqueLeads : 0,
       totalBookedInRange,

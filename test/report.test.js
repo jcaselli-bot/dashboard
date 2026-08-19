@@ -158,6 +158,8 @@ test("filters new leads by original create date and appointments by appointment 
   assert.deepEqual(report.rows.map((row) => row.id), ["2"]);
   assert.deepEqual(report.appointmentRows.map((row) => row.id), ["1"]);
   assert.equal(report.summary.uniqueLeads, 1);
+  assert.equal(report.summary.newLeadsWithAppointmentDate, 0);
+  assert.equal(report.summary.appointmentsDatedInRange, 1);
   assert.equal(report.summary.appointmentSet, 1);
   assert.equal(report.statuses.find((item) => item.label === "Scheduled").count, 1);
 });
@@ -189,6 +191,34 @@ test("separates cohort booking rate from all bookings made in the selected range
   assert.equal(report.summary.bookingRate, 0.5);
   assert.equal(report.summary.totalBookedInRange, 1);
   assert.deepEqual(report.bookingRows.map((row) => row.id), ["1"]);
+});
+
+test("separates new leads with an appointment date from appointments dated in range", () => {
+  const createdInRangeWithLaterAppointment = contact(1, {
+    email:"cohort@example.com",
+    service:"Roofing",
+    appointment_date:"2026-08-25T15:00:00.000Z",
+  });
+  createdInRangeWithLaterAppointment.createdAt = "2026-08-19T12:00:00.000Z";
+  const olderLeadWithAppointmentInRange = contact(2, {
+    email:"older@example.com",
+    service:"Solar",
+    appointment_date:"2026-08-19T17:00:00.000Z",
+  });
+  olderLeadWithAppointmentInRange.createdAt = "2026-07-01T12:00:00.000Z";
+
+  const report = buildReport([createdInRangeWithLaterAppointment, olderLeadWithAppointmentInRange], {
+    mapping,
+    rangeStart:"2026-08-19T00:00:00.000Z",
+    rangeEnd:"2026-08-20T00:00:00.000Z",
+    now:new Date("2026-08-20T12:00:00.000Z"),
+  });
+  assert.equal(report.summary.uniqueLeads, 1);
+  assert.equal(report.summary.newLeadsWithAppointmentDate, 1);
+  assert.equal(report.summary.newLeadAppointmentDateRate, 1);
+  assert.equal(report.summary.appointmentsDatedInRange, 1);
+  assert.deepEqual(report.rows.map((row) => row.id), ["1"]);
+  assert.deepEqual(report.appointmentRows.map((row) => row.id), ["2"]);
 });
 
 test("joins duplicate chains connected by email or phone", () => {
@@ -343,6 +373,8 @@ test("builds service and appointment totals after deduplication", () => {
   assert.equal(report.summary.duplicatesRemoved, 1);
   assert.equal(report.summary.appointmentSet, 1);
   assert.equal(report.summary.appointmentRate, 0.5);
+  assert.equal(report.summary.newLeadsWithAppointmentDate, 1);
+  assert.equal(report.summary.appointmentsDatedInRange, 1);
   assert.deepEqual(report.services.map((item) => [item.service,item.leads,item.appointmentSet]), [
     ["Roofing",1,1],
     ["Solar",1,0],

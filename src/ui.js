@@ -97,7 +97,7 @@ export const DASHBOARD_HTML = `<!doctype html>
     .banner.error { border-color:rgba(255,111,114,.3); background:rgba(255,111,114,.08); color:#ffc4c5; }
     .banner.info { border-color:rgba(57,198,216,.22); background:rgba(57,198,216,.065); color:#b8e8ee; }
     .banner button { color:inherit; background:none; border:0; cursor:pointer; font-weight:800; }
-    .kpis { display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:12px; margin-bottom:12px; }
+    .kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:12px; }
     .kpi { position:relative; min-height:132px; padding:18px; border:1px solid var(--border-soft); border-radius:var(--radius); background:linear-gradient(150deg, rgba(20,38,61,.95), rgba(10,24,40,.94)); overflow:hidden; }
     .kpi::after { content:""; position:absolute; width:80px; height:80px; border-radius:50%; right:-28px; top:-30px; background:var(--kpi-glow, rgba(255,138,31,.12)); filter:blur(2px); }
     .kpi-label { color:var(--muted); font-size:12px; display:flex; justify-content:space-between; gap:10px; }
@@ -303,10 +303,11 @@ export const DASHBOARD_HTML = `<!doctype html>
 
       <section class="kpis" id="kpis" aria-label="Lead summary">
         <article class="kpi"><div class="kpi-label">Unique new leads</div><div class="kpi-value skeleton">000</div><div class="kpi-note">After history-wide duplicate removal</div></article>
+        <article class="kpi"><div class="kpi-label">New leads with appointment date</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Create date in range + appointment date filled</div></article>
+        <article class="kpi"><div class="kpi-label">Appointments dated in range</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Appointment date in range; create date ignored</div></article>
         <article class="kpi"><div class="kpi-label">Booked from new leads</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Selected lead cohort that reached Appointment Set</div></article>
         <article class="kpi"><div class="kpi-label">New-lead booking rate</div><div class="kpi-value skeleton">00%</div><div class="kpi-note">Booked cohort leads ÷ unique new leads</div></article>
         <article class="kpi"><div class="kpi-label">Total booked in range</div><div class="kpi-value skeleton">000</div><div class="kpi-note">All Date entered Appointment Set values</div></article>
-        <article class="kpi"><div class="kpi-label">Appointments occurring</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Based on actual appointment date</div></article>
         <article class="kpi"><div class="kpi-label">Duplicates removed</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Oldest contact retained</div></article>
       </section>
 
@@ -325,7 +326,7 @@ export const DASHBOARD_HTML = `<!doctype html>
         </article>
         <article class="panel">
           <div class="panel-head">
-            <div><h2 class="panel-title">Lifecycle stage of appointments occurring</h2><div class="panel-sub">Current HubSpot lifecycle stage for appointments whose actual date is in range</div></div>
+            <div><h2 class="panel-title">Lifecycle stage of appointments dated in range</h2><div class="panel-sub">Appointment date is in range; the contact’s create date is ignored</div></div>
           </div>
           <div class="schedule-body">
             <div class="donut" id="donut"><div class="donut-center"><div class="donut-value" id="donut-value">—</div><div class="donut-label">appointments</div></div></div>
@@ -709,11 +710,11 @@ export const DASHBOARD_HTML = `<!doctype html>
         rows.forEach(function (row) {
           var source = sourceForRow(row);
           sources[source] = (sources[source] || 0) + 1;
-          if (!services[row.service]) services[row.service] = { service:row.service, leads:0, bookedFromNewLeads:0, appointmentSet:0, scheduled:0, completed:0, canceledNoShow:0, notScheduled:0 };
+          if (!services[row.service]) services[row.service] = { service:row.service, leads:0, bookedFromNewLeads:0, newLeadsWithAppointmentDate:0, scheduled:0, completed:0, canceledNoShow:0, notScheduled:0 };
           var service = services[row.service];
           service.leads += 1;
           if (row.bookedEver) service.bookedFromNewLeads += 1;
-          if (row.everScheduled) service.appointmentSet += 1;
+          if (row.appointmentDate) service.newLeadsWithAppointmentDate += 1;
           if (row.scheduleCategory === "Scheduled" || row.scheduleCategory === "Rescheduled") service.scheduled += 1;
           if (row.scheduleCategory === "Completed") service.completed += 1;
           if (row.scheduleCategory === "Canceled" || row.scheduleCategory === "No-show") service.canceledNoShow += 1;
@@ -727,7 +728,8 @@ export const DASHBOARD_HTML = `<!doctype html>
           bookedFromNewLeads:rows.filter(function (row) { return row.bookedEver; }).length,
           totalBookedInRange:bookingRows.length,
           newLeadsEverScheduled:rows.filter(function (row) { return row.everScheduled; }).length,
-          appointmentsInRange:appointmentRows.length,
+          newLeadsWithAppointmentDate:rows.filter(function (row) { return Boolean(row.appointmentDate); }).length,
+          appointmentsDatedInRange:appointmentRows.length,
           activeScheduled:appointmentRows.filter(function (row) { return row.scheduleCategory === "Scheduled" || row.scheduleCategory === "Rescheduled"; }).length,
           statuses:STATUS_ORDER.map(function (label) { return { label:label, count:statusCounts[label] || 0 }; }),
           services:Object.keys(services).map(function (key) { var item=services[key]; item.bookingRate=item.leads ? item.bookedFromNewLeads/item.leads : 0; return item; }).sort(function (a,b) { return b.leads-a.leads || a.service.localeCompare(b.service); }),
@@ -736,13 +738,15 @@ export const DASHBOARD_HTML = `<!doctype html>
             var segmentAppointments = appointmentRows.filter(function (row) { return rowSegments(row).indexOf(segment) >= 0; });
             var segmentBookings = bookingRows.filter(function (row) { return rowSegments(row).indexOf(segment) >= 0; });
             var bookedFromNewLeads = segmentRows.filter(function (row) { return row.bookedEver; }).length;
+            var newLeadsWithAppointmentDate = segmentRows.filter(function (row) { return Boolean(row.appointmentDate); }).length;
             return {
               segment:segment,
               leads:segmentRows.length,
               bookedFromNewLeads:bookedFromNewLeads,
               totalBookedInRange:segmentBookings.length,
               bookingRate:segmentRows.length ? bookedFromNewLeads / segmentRows.length : 0,
-              appointmentsInRange:segmentAppointments.length,
+              newLeadsWithAppointmentDate:newLeadsWithAppointmentDate,
+              appointmentsDatedInRange:segmentAppointments.length,
               activeScheduled:segmentAppointments.filter(function (row) { return row.scheduleCategory === "Scheduled" || row.scheduleCategory === "Rescheduled"; }).length,
               completed:segmentAppointments.filter(function (row) { return row.scheduleCategory === "Completed"; }).length
             };
@@ -771,10 +775,11 @@ export const DASHBOARD_HTML = `<!doctype html>
         var totalBooked = bookingDataAvailable ? number.format(metrics.totalBookedInRange) : "—";
         var cards = [
           { label:"Unique new leads", value:number.format(metrics.total), note:rows.length === state.report.rows.length ? "After history-wide duplicate removal" : "Matches current filters", glow:"rgba(57,198,216,.13)" },
+          { label:"New leads with appointment date", value:number.format(metrics.newLeadsWithAppointmentDate), note:"Create date in range + appointment date filled", glow:"rgba(73,207,147,.13)" },
+          { label:"Appointments dated in range", value:number.format(metrics.appointmentsDatedInRange), note:"Appointment date in range; create date ignored", glow:"rgba(157,140,255,.13)" },
           { label:"Booked from new leads", value:bookingCount, note:"Created in range and ever entered Appointment Set", glow:"rgba(73,207,147,.13)" },
           { label:"New-lead booking rate", value:bookingRate, note:"Booked cohort leads ÷ unique new leads", glow:"rgba(57,198,216,.13)" },
           { label:"Total booked in range", value:totalBooked, note:"Appointment Set changes from any create date", glow:"rgba(255,138,31,.14)" },
-          { label:"Appointments occurring", value:number.format(metrics.appointmentsInRange), note:"Based on actual appointment date", glow:"rgba(157,140,255,.13)" },
           { label:"Duplicates removed", value:number.format(duplicateCount), note:number.format(state.report.summary.duplicateGroups) + " duplicate groups overall", glow:"rgba(241,199,91,.12)" }
         ];
         $("#kpis").innerHTML = cards.map(function (card) {
@@ -831,7 +836,7 @@ export const DASHBOARD_HTML = `<!doctype html>
       }
 
       function renderSchedule(metrics) {
-        var total = Math.max(metrics.appointmentsInRange, 1);
+        var total = Math.max(metrics.appointmentsDatedInRange, 1);
         var cursor = 0;
         var segments = [];
         metrics.statuses.forEach(function (item) {
@@ -841,7 +846,7 @@ export const DASHBOARD_HTML = `<!doctype html>
           segments.push(STATUS_COLORS[item.label] + " " + start.toFixed(2) + "% " + cursor.toFixed(2) + "%");
         });
         $("#donut").style.background = segments.length ? "conic-gradient(" + segments.join(",") + ")" : "var(--border)";
-        $("#donut-value").textContent = number.format(metrics.appointmentsInRange);
+        $("#donut-value").textContent = number.format(metrics.appointmentsDatedInRange);
         $("#status-list").innerHTML = metrics.statuses.map(function (item) {
           return '<div class="status-row"><span class="status-swatch" style="background:' + STATUS_COLORS[item.label] + '"></span><span>' + escapeHtml(item.label) + '</span><span class="status-count">' + number.format(item.count) + '</span></div>';
         }).join("");
@@ -850,8 +855,8 @@ export const DASHBOARD_HTML = `<!doctype html>
       function renderServices(segments) {
         if (!segments.length) { $("#service-breakdown").innerHTML = '<div class="empty">No Roofing or Solar data matches the current filters.</div>'; return; }
         var max = Math.max.apply(null, segments.map(function (item) { return item.leads; }).concat([1]));
-        $("#service-breakdown").innerHTML = '<table class="service-table"><thead><tr><th>Business line</th><th>Leads</th><th>Booked leads</th><th>Total booked</th><th>Appts. occurring</th><th>Active</th><th>Rate</th></tr></thead><tbody>' + segments.map(function (item) {
-          return '<tr><td class="service-name"><strong>' + escapeHtml(item.segment) + '</strong><div class="mini-bar"><span style="width:' + clamp(item.leads / max * 100, item.leads ? 2 : 0, 100) + '%"></span></div></td><td>' + number.format(item.leads) + '</td><td>' + number.format(item.bookedFromNewLeads) + '</td><td>' + number.format(item.totalBookedInRange) + '</td><td>' + number.format(item.appointmentsInRange) + '</td><td>' + number.format(item.activeScheduled) + '</td><td class="rate">' + percent(item.bookingRate) + '</td></tr>';
+        $("#service-breakdown").innerHTML = '<table class="service-table"><thead><tr><th>Business line</th><th>New leads</th><th>New leads with appt. date</th><th>Appts. dated in range</th><th>Booked from new leads</th><th>Total booked</th><th>Booking rate</th></tr></thead><tbody>' + segments.map(function (item) {
+          return '<tr><td class="service-name"><strong>' + escapeHtml(item.segment) + '</strong><div class="mini-bar"><span style="width:' + clamp(item.leads / max * 100, item.leads ? 2 : 0, 100) + '%"></span></div></td><td>' + number.format(item.leads) + '</td><td>' + number.format(item.newLeadsWithAppointmentDate) + '</td><td>' + number.format(item.appointmentsDatedInRange) + '</td><td>' + number.format(item.bookedFromNewLeads) + '</td><td>' + number.format(item.totalBookedInRange) + '</td><td class="rate">' + percent(item.bookingRate) + '</td></tr>';
         }).join("") + '</tbody></table>';
       }
 

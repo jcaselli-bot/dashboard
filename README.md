@@ -139,11 +139,13 @@ The test suite covers oldest-created duplicate selection, newer-information cons
 - **New lead:** a HubSpot contact whose retained original `createdate` falls inside the selected date range.
 - **Unique new lead:** a duplicate group whose oldest contact was created inside the selected date range. Duplicate grouping is completed before the start-date filter is applied.
 - **Appointment in range:** a deduplicated contact whose selected appointment date falls inside the chosen range, regardless of when the original lead was created.
+- **New lead with appointment date:** a unique new lead whose retained original create date is inside the chosen range and whose mapped appointment-date field is filled. The appointment itself may occur outside the chosen range.
+- **Appointments dated in range:** a deduplicated contact whose mapped appointment date falls inside the chosen range, regardless of its original create date.
 - **Active scheduled:** an appointment dated inside the chosen range whose current outcome is scheduled or rescheduled.
 - **Booked from new leads:** unique new leads created inside the chosen range whose **Date entered Appointment Set** property has a value, even if that date is later than the selected range.
 - **New-lead booking rate:** booked-from-new-leads divided by all unique new leads in the chosen range.
 - **Total booked in range:** deduplicated contacts whose **Date entered Appointment Set** falls during the chosen dates, regardless of their original create date.
-- **Appointments occurring:** deduplicated contacts whose selected appointment date falls inside the chosen range. This is separate from when the appointment was booked.
+- **Appointments occurring:** the same appointment-date-only population shown as **Appointments dated in range**. This is separate from both contact create date and booking date.
 - **Lifecycle stage breakdown:** appointments occurring in the chosen range grouped from their current `lifecyclestage` value. The dashboard translates HubSpot internal option values to their displayed labels before categorizing them; mapped appointment status is used only as a fallback when lifecycle stage is blank.
 
 HubSpot search can return up to 200 records per page and 10,000 records per query. The integration automatically splits large date windows before that limit is reached.
