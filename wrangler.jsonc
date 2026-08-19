@@ -1,8 +1,22 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "dashboard",
-  "main": "src/index.js",
+  "main": "src/cloudflare-entry.js",
   "compatibility_date": "2026-08-01",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "DASHBOARD_SETTINGS",
+        "class_name": "DashboardSettingsStore"
+      }
+    ]
+  },
+  "exports": {
+    "DashboardSettingsStore": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  },
   "observability": {
     "enabled": true
   }
