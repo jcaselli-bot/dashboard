@@ -3,8 +3,8 @@
 A secure, read-only Cloudflare Worker dashboard for HubSpot contact reporting. It shows:
 
 - unique new leads for any date range, defaulting to the past three weeks;
-- two appointment totals: new leads with an appointment date and appointments dated in the selected range;
-- the current HubSpot **Lifecycle stage** for each appointment occurring in the selected range, normalized into Scheduled, Rescheduled, Completed, Canceled, No-show, Other / review, or Not scheduled;
+- two appointment totals: appointments set from new leads and appointments set during the selected range;
+- the current HubSpot **Lifecycle stage** for each contact that entered Appointment Set during the selected range, normalized into Scheduled, Rescheduled, Completed, Canceled, No-show, Other / review, or Not scheduled;
 - lead and appointment performance by service;
 - lead source mix, owner, detailed records, filters, privacy masking, and CSV export;
 - an audit of every duplicate record removed;
@@ -96,7 +96,7 @@ Open **Configure** and map these HubSpot contact properties:
 
 The dashboard reads the property definitions in your account and recommends likely matches. You can enter an internal property name manually if needed. These mappings are saved to the Worker's Cloudflare Durable Object, with browser storage as a fallback; the HubSpot token remains server-side.
 
-The mapped appointment-date field supplies both visible appointment totals. Lifecycle stage supplies the status breakdown.
+HubSpot's `hs_v2_date_entered_1387807760` (**Date entered Appointment Set**) supplies both visible appointment totals. The mapped appointment-date field is retained for scheduled appointment details, but it does not control those totals. Lifecycle stage supplies the status breakdown.
 
 For scheduling source, choose:
 
@@ -137,10 +137,8 @@ The test suite covers oldest-created duplicate selection, newer-information cons
 
 - **New lead:** a HubSpot contact whose retained original `createdate` falls inside the selected date range.
 - **Unique new lead:** a duplicate group whose oldest contact was created inside the selected date range. Duplicate grouping is completed before the start-date filter is applied.
-- **Appointment in range:** a deduplicated contact whose selected appointment date falls inside the chosen range, regardless of when the original lead was created.
-- **New lead with appointment date:** a unique new lead whose retained original create date is inside the chosen range and whose mapped appointment-date field is filled. The appointment itself may occur outside the chosen range.
-- **Appointments dated in range:** a deduplicated contact whose mapped appointment date falls inside the chosen range, regardless of its original create date.
-- **Appointments occurring:** the same appointment-date-only population shown as **Appointments dated in range**. This is separate from contact create date.
-- **Lifecycle stage breakdown:** appointments occurring in the chosen range grouped from their current `lifecyclestage` value. The dashboard translates HubSpot internal option values to their displayed labels before categorizing them; mapped appointment status is used only as a fallback when lifecycle stage is blank.
+- **Appointment set from a new lead:** a unique new lead whose retained original create date is inside the chosen range and that has a value in `hs_v2_date_entered_1387807760`. The contact may have entered Appointment Set outside the chosen range.
+- **Appointment set in range:** a deduplicated contact whose `hs_v2_date_entered_1387807760` value falls inside the chosen range, regardless of its original create date or the date on which the appointment is scheduled to occur.
+- **Lifecycle stage breakdown:** contacts that entered Appointment Set in the chosen range, grouped from their current `lifecyclestage` value. The dashboard translates HubSpot internal option values to their displayed labels before categorizing them; mapped appointment status is used only as a fallback when lifecycle stage is blank.
 
 HubSpot search can return up to 200 records per page and 10,000 records per query. The integration automatically splits large date windows before that limit is reached.

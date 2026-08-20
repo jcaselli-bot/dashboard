@@ -303,27 +303,27 @@ export const DASHBOARD_HTML = `<!doctype html>
 
       <section class="kpis" id="kpis" aria-label="Lead summary">
         <article class="kpi"><div class="kpi-label">Unique new leads</div><div class="kpi-value skeleton">000</div><div class="kpi-note">After history-wide duplicate removal</div></article>
-        <article class="kpi"><div class="kpi-label">New leads with appointment date</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Create date in range + appointment date filled</div></article>
-        <article class="kpi"><div class="kpi-label">Appointments dated in range</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Appointment date in range; create date ignored</div></article>
+        <article class="kpi"><div class="kpi-label">Appointments set from new leads</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Create date in range + entered Appointment Set</div></article>
+        <article class="kpi"><div class="kpi-label">Appointments set in range</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Date entered Appointment Set in range; create date ignored</div></article>
         <article class="kpi"><div class="kpi-label">Duplicates removed</div><div class="kpi-value skeleton">000</div><div class="kpi-note">Oldest contact retained</div></article>
       </section>
 
       <section class="segment-grid" id="segment-cards" aria-label="Roofing and solar performance">
-        <article class="segment-card roofing"><div class="segment-head"><div class="segment-name">Roofing</div></div><div class="segment-stats"><div class="segment-stat"><strong class="skeleton">000</strong><span>Unique leads</span></div><div class="segment-stat"><strong class="skeleton">000</strong><span>New leads with appt. date</span></div><div class="segment-stat"><strong class="skeleton">000</strong><span>Appts. dated in range</span></div></div></article>
-        <article class="segment-card solar"><div class="segment-head"><div class="segment-name">Solar</div></div><div class="segment-stats"><div class="segment-stat"><strong class="skeleton">000</strong><span>Unique leads</span></div><div class="segment-stat"><strong class="skeleton">000</strong><span>New leads with appt. date</span></div><div class="segment-stat"><strong class="skeleton">000</strong><span>Appts. dated in range</span></div></div></article>
+        <article class="segment-card roofing"><div class="segment-head"><div class="segment-name">Roofing</div></div><div class="segment-stats"><div class="segment-stat"><strong class="skeleton">000</strong><span>Unique leads</span></div><div class="segment-stat"><strong class="skeleton">000</strong><span>Set from new leads</span></div><div class="segment-stat"><strong class="skeleton">000</strong><span>Set in range</span></div></div></article>
+        <article class="segment-card solar"><div class="segment-head"><div class="segment-name">Solar</div></div><div class="segment-stats"><div class="segment-stat"><strong class="skeleton">000</strong><span>Unique leads</span></div><div class="segment-stat"><strong class="skeleton">000</strong><span>Set from new leads</span></div><div class="segment-stat"><strong class="skeleton">000</strong><span>Set in range</span></div></div></article>
       </section>
 
       <section class="main-grid">
         <article class="panel">
           <div class="panel-head">
-            <div><h2 class="panel-title">New leads and appointments dated</h2><div class="panel-sub" id="trend-sub">Leads by original create date; appointments by actual appointment date</div></div>
+            <div><h2 class="panel-title">New leads and appointments set</h2><div class="panel-sub" id="trend-sub">Leads by original create date; appointments by Date entered Appointment Set</div></div>
             <div class="legend-inline"><span><i class="legend-dot"></i>Leads</span><span><i class="legend-dot orange"></i>Appointments</span></div>
           </div>
           <div class="trend" id="trend"><div class="empty">Loading trend…</div></div>
         </article>
         <article class="panel">
           <div class="panel-head">
-            <div><h2 class="panel-title">Lifecycle stage of appointments dated in range</h2><div class="panel-sub">Appointment date is in range; the contact’s create date is ignored</div></div>
+            <div><h2 class="panel-title">Lifecycle stage of appointments set in range</h2><div class="panel-sub">Date entered Appointment Set is in range; the contact’s create date is ignored</div></div>
           </div>
           <div class="schedule-body">
             <div class="donut" id="donut"><div class="donut-center"><div class="donut-value" id="donut-value">—</div><div class="donut-label">appointments</div></div></div>
@@ -691,11 +691,11 @@ export const DASHBOARD_HTML = `<!doctype html>
         return state.report ? filterReportRows(state.report.rows) : [];
       }
 
-      function filteredAppointmentRows() {
-        return state.report ? filterReportRows(state.report.appointmentRows || []) : [];
+      function filteredBookingRows() {
+        return state.report ? filterReportRows(state.report.bookingRows || []) : [];
       }
 
-      function aggregate(rows, appointmentRows) {
+      function aggregate(rows, bookingRows) {
         var statusCounts = {};
         var services = {};
         var sources = {};
@@ -703,37 +703,37 @@ export const DASHBOARD_HTML = `<!doctype html>
         rows.forEach(function (row) {
           var source = sourceForRow(row);
           sources[source] = (sources[source] || 0) + 1;
-          if (!services[row.service]) services[row.service] = { service:row.service, leads:0, newLeadsWithAppointmentDate:0, scheduled:0, completed:0, canceledNoShow:0, notScheduled:0 };
+          if (!services[row.service]) services[row.service] = { service:row.service, leads:0, appointmentsSetFromNewLeads:0, scheduled:0, completed:0, canceledNoShow:0, notScheduled:0 };
           var service = services[row.service];
           service.leads += 1;
-          if (row.appointmentDate) service.newLeadsWithAppointmentDate += 1;
+          if (row.bookedEver) service.appointmentsSetFromNewLeads += 1;
           if (row.scheduleCategory === "Scheduled" || row.scheduleCategory === "Rescheduled") service.scheduled += 1;
           if (row.scheduleCategory === "Completed") service.completed += 1;
           if (row.scheduleCategory === "Canceled" || row.scheduleCategory === "No-show") service.canceledNoShow += 1;
           if (!row.everScheduled) service.notScheduled += 1;
         });
-        appointmentRows.forEach(function (row) {
+        bookingRows.forEach(function (row) {
           statusCounts[row.scheduleCategory] = (statusCounts[row.scheduleCategory] || 0) + 1;
         });
         return {
           total:rows.length,
           newLeadsEverScheduled:rows.filter(function (row) { return row.everScheduled; }).length,
-          newLeadsWithAppointmentDate:rows.filter(function (row) { return Boolean(row.appointmentDate); }).length,
-          appointmentsDatedInRange:appointmentRows.length,
-          activeScheduled:appointmentRows.filter(function (row) { return row.scheduleCategory === "Scheduled" || row.scheduleCategory === "Rescheduled"; }).length,
+          appointmentsSetFromNewLeads:rows.filter(function (row) { return row.bookedEver; }).length,
+          appointmentsSetInRange:bookingRows.length,
+          activeScheduled:bookingRows.filter(function (row) { return row.scheduleCategory === "Scheduled" || row.scheduleCategory === "Rescheduled"; }).length,
           statuses:STATUS_ORDER.map(function (label) { return { label:label, count:statusCounts[label] || 0 }; }),
           services:Object.keys(services).map(function (key) { return services[key]; }).sort(function (a,b) { return b.leads-a.leads || a.service.localeCompare(b.service); }),
           segments:["Roofing","Solar"].map(function (segment) {
             var segmentRows = rows.filter(function (row) { return rowSegments(row).indexOf(segment) >= 0; });
-            var segmentAppointments = appointmentRows.filter(function (row) { return rowSegments(row).indexOf(segment) >= 0; });
-            var newLeadsWithAppointmentDate = segmentRows.filter(function (row) { return Boolean(row.appointmentDate); }).length;
+            var segmentBookings = bookingRows.filter(function (row) { return rowSegments(row).indexOf(segment) >= 0; });
+            var appointmentsSetFromNewLeads = segmentRows.filter(function (row) { return row.bookedEver; }).length;
             return {
               segment:segment,
               leads:segmentRows.length,
-              newLeadsWithAppointmentDate:newLeadsWithAppointmentDate,
-              appointmentsDatedInRange:segmentAppointments.length,
-              activeScheduled:segmentAppointments.filter(function (row) { return row.scheduleCategory === "Scheduled" || row.scheduleCategory === "Rescheduled"; }).length,
-              completed:segmentAppointments.filter(function (row) { return row.scheduleCategory === "Completed"; }).length
+              appointmentsSetFromNewLeads:appointmentsSetFromNewLeads,
+              appointmentsSetInRange:segmentBookings.length,
+              activeScheduled:segmentBookings.filter(function (row) { return row.scheduleCategory === "Scheduled" || row.scheduleCategory === "Rescheduled"; }).length,
+              completed:segmentBookings.filter(function (row) { return row.scheduleCategory === "Completed"; }).length
             };
           }),
           sources:Object.keys(sources).map(function (label) { return { label:label, count:sources[label] }; }).sort(function (a,b) { return b.count-a.count; })
@@ -756,8 +756,8 @@ export const DASHBOARD_HTML = `<!doctype html>
         var duplicateCount = state.report ? state.report.summary.duplicatesRemoved : 0;
         var cards = [
           { label:"Unique new leads", value:number.format(metrics.total), note:rows.length === state.report.rows.length ? "After history-wide duplicate removal" : "Matches current filters", glow:"rgba(57,198,216,.13)" },
-          { label:"New leads with appointment date", value:number.format(metrics.newLeadsWithAppointmentDate), note:"Create date in range + appointment date filled", glow:"rgba(73,207,147,.13)" },
-          { label:"Appointments dated in range", value:number.format(metrics.appointmentsDatedInRange), note:"Appointment date in range; create date ignored", glow:"rgba(157,140,255,.13)" },
+          { label:"Appointments set from new leads", value:number.format(metrics.appointmentsSetFromNewLeads), note:"Create date in range + entered Appointment Set", glow:"rgba(73,207,147,.13)" },
+          { label:"Appointments set in range", value:number.format(metrics.appointmentsSetInRange), note:"Date entered Appointment Set in range; create date ignored", glow:"rgba(157,140,255,.13)" },
           { label:"Duplicates removed", value:number.format(duplicateCount), note:number.format(state.report.summary.duplicateGroups) + " duplicate groups overall", glow:"rgba(241,199,91,.12)" }
         ];
         $("#kpis").innerHTML = cards.map(function (card) {
@@ -768,11 +768,11 @@ export const DASHBOARD_HTML = `<!doctype html>
       function renderSegmentCards(segments) {
         $("#segment-cards").innerHTML = segments.map(function (item) {
           var className = item.segment.toLowerCase();
-          return '<article class="segment-card ' + className + '"><div class="segment-head"><div class="segment-name">' + escapeHtml(item.segment) + '</div></div><div class="segment-stats"><div class="segment-stat"><strong>' + number.format(item.leads) + '</strong><span>Unique leads</span></div><div class="segment-stat"><strong>' + number.format(item.newLeadsWithAppointmentDate) + '</strong><span>New leads with appt. date</span></div><div class="segment-stat"><strong>' + number.format(item.appointmentsDatedInRange) + '</strong><span>Appts. dated in range</span></div></div></article>';
+          return '<article class="segment-card ' + className + '"><div class="segment-head"><div class="segment-name">' + escapeHtml(item.segment) + '</div></div><div class="segment-stats"><div class="segment-stat"><strong>' + number.format(item.leads) + '</strong><span>Unique leads</span></div><div class="segment-stat"><strong>' + number.format(item.appointmentsSetFromNewLeads) + '</strong><span>Set from new leads</span></div><div class="segment-stat"><strong>' + number.format(item.appointmentsSetInRange) + '</strong><span>Set in range</span></div></div></article>';
         }).join("");
       }
 
-      function trendData(rows, appointmentRows) {
+      function trendData(rows, bookingRows) {
         var start = new Date($("#start-date").value + "T00:00:00");
         var end = new Date($("#end-date").value + "T00:00:00");
         var map = {};
@@ -782,8 +782,8 @@ export const DASHBOARD_HTML = `<!doctype html>
           if (!map[key]) map[key] = { leads:0, appointments:0 };
           map[key].leads += 1;
         });
-        appointmentRows.forEach(function (row) {
-          var key = localDateKey(row.appointmentDate);
+        bookingRows.forEach(function (row) {
+          var key = localDateKey(row.bookingDate);
           if (!key) return;
           if (!map[key]) map[key] = { leads:0, appointments:0 };
           map[key].appointments += 1;
@@ -798,8 +798,8 @@ export const DASHBOARD_HTML = `<!doctype html>
         return output;
       }
 
-      function renderTrend(rows, appointmentRows) {
-        var data = trendData(rows, appointmentRows);
+      function renderTrend(rows, bookingRows) {
+        var data = trendData(rows, bookingRows);
         if (!data.length) { $("#trend").innerHTML = '<div class="empty">No dates in this range.</div>'; return; }
         var max = Math.max.apply(null, data.map(function (item) { return Math.max(item.leads, item.appointments); }).concat([1]));
         var labelEvery = Math.max(1, Math.ceil(data.length / 7));
@@ -810,11 +810,11 @@ export const DASHBOARD_HTML = `<!doctype html>
           var label = index % labelEvery === 0 || index === data.length - 1 ? '<span class="day-label">' + escapeHtml(dateShort.format(item.date)) + '</span>' : "";
           return '<div class="day-group" title="' + escapeHtml(title) + '"><div class="day-leads" style="height:' + leadHeight + '%"></div><div class="day-appts" style="height:' + appointmentHeight + '%"></div>' + label + '</div>';
         }).join("");
-        $("#trend-sub").textContent = number.format(rows.length) + " unique leads · " + number.format(appointmentRows.length) + " appointments dated in range";
+        $("#trend-sub").textContent = number.format(rows.length) + " unique leads · " + number.format(bookingRows.length) + " appointments set in range";
       }
 
       function renderSchedule(metrics) {
-        var total = Math.max(metrics.appointmentsDatedInRange, 1);
+        var total = Math.max(metrics.appointmentsSetInRange, 1);
         var cursor = 0;
         var segments = [];
         metrics.statuses.forEach(function (item) {
@@ -824,7 +824,7 @@ export const DASHBOARD_HTML = `<!doctype html>
           segments.push(STATUS_COLORS[item.label] + " " + start.toFixed(2) + "% " + cursor.toFixed(2) + "%");
         });
         $("#donut").style.background = segments.length ? "conic-gradient(" + segments.join(",") + ")" : "var(--border)";
-        $("#donut-value").textContent = number.format(metrics.appointmentsDatedInRange);
+        $("#donut-value").textContent = number.format(metrics.appointmentsSetInRange);
         $("#status-list").innerHTML = metrics.statuses.map(function (item) {
           return '<div class="status-row"><span class="status-swatch" style="background:' + STATUS_COLORS[item.label] + '"></span><span>' + escapeHtml(item.label) + '</span><span class="status-count">' + number.format(item.count) + '</span></div>';
         }).join("");
@@ -833,8 +833,8 @@ export const DASHBOARD_HTML = `<!doctype html>
       function renderServices(segments) {
         if (!segments.length) { $("#service-breakdown").innerHTML = '<div class="empty">No Roofing or Solar data matches the current filters.</div>'; return; }
         var max = Math.max.apply(null, segments.map(function (item) { return item.leads; }).concat([1]));
-        $("#service-breakdown").innerHTML = '<table class="service-table"><thead><tr><th>Business line</th><th>New leads</th><th>New leads with appt. date</th><th>Appts. dated in range</th></tr></thead><tbody>' + segments.map(function (item) {
-          return '<tr><td class="service-name"><strong>' + escapeHtml(item.segment) + '</strong><div class="mini-bar"><span style="width:' + clamp(item.leads / max * 100, item.leads ? 2 : 0, 100) + '%"></span></div></td><td>' + number.format(item.leads) + '</td><td>' + number.format(item.newLeadsWithAppointmentDate) + '</td><td>' + number.format(item.appointmentsDatedInRange) + '</td></tr>';
+        $("#service-breakdown").innerHTML = '<table class="service-table"><thead><tr><th>Business line</th><th>New leads</th><th>Set from new leads</th><th>Set in range</th></tr></thead><tbody>' + segments.map(function (item) {
+          return '<tr><td class="service-name"><strong>' + escapeHtml(item.segment) + '</strong><div class="mini-bar"><span style="width:' + clamp(item.leads / max * 100, item.leads ? 2 : 0, 100) + '%"></span></div></td><td>' + number.format(item.leads) + '</td><td>' + number.format(item.appointmentsSetFromNewLeads) + '</td><td>' + number.format(item.appointmentsSetInRange) + '</td></tr>';
         }).join("") + '</tbody></table>';
       }
 
@@ -923,11 +923,11 @@ export const DASHBOARD_HTML = `<!doctype html>
       function renderFiltered() {
         if (!state.report) return;
         var rows = filteredRows();
-        var appointmentRows = filteredAppointmentRows();
-        var metrics = aggregate(rows, appointmentRows);
+        var bookingRows = filteredBookingRows();
+        var metrics = aggregate(rows, bookingRows);
         renderKpis(rows, metrics);
         renderSegmentCards(metrics.segments);
-        renderTrend(rows, appointmentRows);
+        renderTrend(rows, bookingRows);
         renderSchedule(metrics);
         renderServices(metrics.segments);
         renderSources(metrics.sources);
@@ -938,7 +938,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 
       function renderAll() {
         renderBanners();
-        setFilterOptions(state.report.rows.concat(state.report.appointmentRows || []));
+        setFilterOptions(state.report.rows.concat(state.report.bookingRows || []));
         renderDuplicates();
         renderFiltered();
       }
@@ -992,7 +992,7 @@ export const DASHBOARD_HTML = `<!doctype html>
           state.filters.source = "";
           $("#source-filter").value = "";
           state.page = 1;
-          setFilterOptions(filteredRows().concat(filteredAppointmentRows()));
+          setFilterOptions(filteredRows().concat(filteredBookingRows()));
           renderFiltered();
         });
         $("#status-filter").addEventListener("change", function (event) { state.filters.status=event.target.value; state.page=1; renderFiltered(); });

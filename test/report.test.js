@@ -135,7 +135,7 @@ test("deduplicates against earlier contacts before applying the selected create-
   assert.equal(bothDates.rows[0].scheduleCategory, "Scheduled");
 });
 
-test("filters new leads by original create date and appointments by appointment date", () => {
+test("keeps actual appointment dates separate from Appointment Set events", () => {
   const olderLead = contact(1, {
     email:"older@example.com",
     service:"Solar",
@@ -160,8 +160,9 @@ test("filters new leads by original create date and appointments by appointment 
   assert.equal(report.summary.uniqueLeads, 1);
   assert.equal(report.summary.newLeadsWithAppointmentDate, 0);
   assert.equal(report.summary.appointmentsDatedInRange, 1);
-  assert.equal(report.summary.appointmentSet, 1);
-  assert.equal(report.statuses.find((item) => item.label === "Scheduled").count, 1);
+  assert.equal(report.summary.appointmentSet, 0);
+  assert.equal(report.summary.appointmentsSetInRange, 0);
+  assert.equal(report.statuses.find((item) => item.label === "Scheduled").count, 0);
 });
 
 test("separates cohort booking rate from all bookings made in the selected range", () => {
@@ -190,6 +191,9 @@ test("separates cohort booking rate from all bookings made in the selected range
   assert.equal(report.summary.bookedFromNewLeads, 1);
   assert.equal(report.summary.bookingRate, 0.5);
   assert.equal(report.summary.totalBookedInRange, 1);
+  assert.equal(report.summary.appointmentsSetFromNewLeads, 1);
+  assert.equal(report.summary.appointmentsSetInRange, 1);
+  assert.equal(report.summary.appointmentSet, 1);
   assert.deepEqual(report.bookingRows.map((row) => row.id), ["1"]);
 });
 
@@ -280,6 +284,7 @@ test("uses lifecycle stage for the status breakdown and fixes Not Scheduled prec
     lifecyclestage:"9001",
     appointment_status:"NOT SCHEDULED",
     appointment_date:"2026-08-19T15:00:00.000Z",
+    [APPOINTMENT_SET_DATE_PROPERTY]:"2026-08-19T14:00:00.000Z",
   });
   const lead = contact(2, {
     email:"lead@example.com",
@@ -302,7 +307,7 @@ test("uses lifecycle stage for the status breakdown and fixes Not Scheduled prec
   assert.equal(report.appointmentRows.find((row) => row.id === "1").scheduleCategory, "Scheduled");
   assert.equal(report.appointmentRows.find((row) => row.id === "2").scheduleCategory, "Not scheduled");
   assert.equal(report.statuses.find((item) => item.label === "Scheduled").count, 1);
-  assert.equal(report.statuses.find((item) => item.label === "Not scheduled").count, 1);
+  assert.equal(report.statuses.find((item) => item.label === "Not scheduled").count, 0);
 });
 
 test("normalizes Velocity appointment outcomes", () => {
@@ -364,7 +369,7 @@ test("recommends Velocity's service and original traffic source fields", () => {
 
 test("builds service and appointment totals after deduplication", () => {
   const records = [
-    contact(1, { email:"a@example.com", service:"Roofing", appointment_status:"SCHEDULED", appointment_date:"2026-08-22" }),
+    contact(1, { email:"a@example.com", service:"Roofing", appointment_status:"SCHEDULED", appointment_date:"2026-08-22", [APPOINTMENT_SET_DATE_PROPERTY]:"2026-08-19T14:00:00.000Z" }),
     contact(2, { email:"a@example.com", service:"Roofing" }),
     contact(3, { email:"b@example.com", service:"Solar" }),
   ];
@@ -372,6 +377,8 @@ test("builds service and appointment totals after deduplication", () => {
   assert.equal(report.summary.uniqueLeads, 2);
   assert.equal(report.summary.duplicatesRemoved, 1);
   assert.equal(report.summary.appointmentSet, 1);
+  assert.equal(report.summary.appointmentsSetFromNewLeads, 1);
+  assert.equal(report.summary.appointmentsSetInRange, 1);
   assert.equal(report.summary.appointmentRate, 0.5);
   assert.equal(report.summary.newLeadsWithAppointmentDate, 1);
   assert.equal(report.summary.appointmentsDatedInRange, 1);

@@ -9,9 +9,10 @@ test("serves the dashboard and demo report without external credentials", async 
   assert.equal(page.status, 200);
   const pageHtml = await page.text();
   assert.match(pageHtml, /Velocity Lead Intelligence/);
-  assert.match(pageHtml, /New leads with appointment date/);
-  assert.match(pageHtml, /Appointments dated in range/);
-  assert.doesNotMatch(pageHtml, /Booked from new leads|New-lead booking rate|Total booked in range/);
+  assert.match(pageHtml, /Appointments set from new leads/);
+  assert.match(pageHtml, /Appointments set in range/);
+  assert.match(pageHtml, /Date entered Appointment Set in range/);
+  assert.doesNotMatch(pageHtml, /New leads with appointment date|Appointments dated in range|Booked from new leads|New-lead booking rate|Total booked in range/);
   assert.doesNotMatch(pageHtml, /pat-na1-/);
 
   const healthResponse = await worker.fetch(new Request("https://dashboard.test/api/health"), env, {});

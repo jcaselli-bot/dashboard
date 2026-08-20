@@ -607,10 +607,12 @@ export function buildReport(records, config = {}) {
   const bookedFromNewLeads = rows.filter((row) => row.bookedEver).length;
   const totalBookedInRange = bookingRows.length;
   const appointmentsDatedInRange = appointmentRows.length;
-  const appointmentSet = appointmentsDatedInRange;
-  const activeScheduled = appointmentRows.filter((row) => ["Scheduled", "Rescheduled"].includes(row.scheduleCategory)).length;
-  const completed = appointmentRows.filter((row) => row.scheduleCategory === "Completed").length;
-  const canceledNoShow = appointmentRows.filter((row) => ["Canceled", "No-show"].includes(row.scheduleCategory)).length;
+  const appointmentsSetFromNewLeads = bookedFromNewLeads;
+  const appointmentsSetInRange = totalBookedInRange;
+  const appointmentSet = appointmentsSetInRange;
+  const activeScheduled = bookingRows.filter((row) => ["Scheduled", "Rescheduled"].includes(row.scheduleCategory)).length;
+  const completed = bookingRows.filter((row) => row.scheduleCategory === "Completed").length;
+  const canceledNoShow = bookingRows.filter((row) => ["Canceled", "No-show"].includes(row.scheduleCategory)).length;
   const notScheduled = rows.filter((row) => !row.everScheduled).length;
 
   const canonicalById = new Map(dedupeResult.records.map((record) => [String(record.id), record]));
@@ -646,6 +648,8 @@ export function buildReport(records, config = {}) {
       bookedFromNewLeads,
       bookingRate: uniqueLeads ? bookedFromNewLeads / uniqueLeads : 0,
       totalBookedInRange,
+      appointmentsSetFromNewLeads,
+      appointmentsSetInRange,
       bookingHistoryAvailable: config.bookingDataAvailable !== false && config.bookingHistoryAvailable !== false,
       bookingDateProperty,
       activeScheduled,
@@ -655,9 +659,9 @@ export function buildReport(records, config = {}) {
     },
     statuses: SCHEDULE_CATEGORIES.map((label) => ({
       label,
-      count: appointmentRows.filter((row) => row.scheduleCategory === label).length,
+      count: bookingRows.filter((row) => row.scheduleCategory === label).length,
     })),
-    rawStatuses: countBy(appointmentRows, (row) => row.rawScheduleStatus || row.scheduleCategory),
+    rawStatuses: countBy(bookingRows, (row) => row.rawScheduleStatus || row.scheduleCategory),
     services: buildServiceBreakdown(rows),
     serviceSegments: buildSegmentBreakdown(rows, appointmentRows, bookingRows),
     sources: countBy(rows, (row) => row.leadSource),
