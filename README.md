@@ -32,6 +32,8 @@ Contacts are excluded as Ahoy-Connection records when Original Traffic Source is
 
 Contacts whose mapped **Lead source** property is `LEADer` are also excluded before duplicate grouping. The dashboard recognizes both the displayed option label and its internal HubSpot value.
 
+Contacts with a **Lead source** option labeled `Unknown` or `Unknown source` are also excluded, including internal option values resolved using HubSpot's property definitions. A blank mapped Lead source, which the dashboard would display as `Unknown source`, is excluded as well. Blank additional source fields do not exclude a contact whose mapped source is known. These exclusions happen before duplicate grouping and all lead and appointment calculations, and the report includes an Unknown-source exclusion count.
+
 Appointment details from every duplicate are consolidated into the retained oldest contact, so a date added to a newer duplicate still counts without changing the original create date used for the new-lead cohort.
 
 ## HubSpot setup

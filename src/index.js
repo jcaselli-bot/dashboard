@@ -5,6 +5,7 @@ import {
   DEFAULT_MAPPING,
   isOfflineAhoyConnectionContact,
   isLeaderSourceContact,
+  isUnknownSourceContact,
   recommendMapping,
   recordCreatedInRange,
 } from "./report.js";
@@ -23,7 +24,7 @@ function normalizedPropertyName(value) {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
-function leaderSourcePropertyNames(properties, mapping) {
+function leadSourcePropertyNames(properties, mapping) {
   const names = [mapping.leadSource];
   for (const property of properties || []) {
     const normalizedName = normalizedPropertyName(property.name);
@@ -282,24 +283,30 @@ async function liveReport(request, env) {
   else warnings.push("Owner names were unavailable; owner IDs are shown.");
 
   const reportNow = new Date();
-  const leaderSourceProperties = leaderSourcePropertyNames(contactProperties, mapping);
-  const fetchedContacts = await fetchContacts(token, HUBSPOT_HISTORY_START, end, mapping, leaderSourceProperties);
+  const sourceProperties = leadSourcePropertyNames(contactProperties, mapping);
+  const fetchedContacts = await fetchContacts(token, HUBSPOT_HISTORY_START, end, mapping, sourceProperties);
   const fetchedRecordsInRange = fetchedContacts.filter((contact) => recordCreatedInRange(contact, start, end)).length;
-  const excludedAhoyContacts = fetchedContacts.filter((contact) => isOfflineAhoyConnectionContact(contact));
-  const afterAhoyFilter = fetchedContacts.filter((contact) => !isOfflineAhoyConnectionContact(contact));
-  const excludedLeaderContacts = afterAhoyFilter.filter((contact) => (
-    isLeaderSourceContact(contact, leaderSourceProperties, propertyDefinitions)
-  ));
-  const contacts = afterAhoyFilter.filter((contact) => (
-    !isLeaderSourceContact(contact, leaderSourceProperties, propertyDefinitions)
-  ));
+  const excludedAhoyContacts = [];
+  const excludedLeaderContacts = [];
+  const excludedUnknownContacts = [];
+  const contacts = [];
+  for (const contact of fetchedContacts) {
+    if (isOfflineAhoyConnectionContact(contact)) excludedAhoyContacts.push(contact);
+    else if (isLeaderSourceContact(contact, sourceProperties, propertyDefinitions)) excludedLeaderContacts.push(contact);
+    else if (isUnknownSourceContact(contact, sourceProperties, propertyDefinitions, mapping.leadSource)) excludedUnknownContacts.push(contact);
+    else contacts.push(contact);
+  }
   const excludedAhoyConnection = excludedAhoyContacts.filter((contact) => recordCreatedInRange(contact, start, end)).length;
   const excludedLeader = excludedLeaderContacts.filter((contact) => recordCreatedInRange(contact, start, end)).length;
+  const excludedUnknownSource = excludedUnknownContacts.filter((contact) => recordCreatedInRange(contact, start, end)).length;
   if (excludedAhoyContacts.length) {
     warnings.push(`${excludedAhoyContacts.length} Offline Sources / Ahoy-Connection contact${excludedAhoyContacts.length === 1 ? "" : "s"} excluded from scanned history before deduplication.`);
   }
   if (excludedLeaderContacts.length) {
     warnings.push(`${excludedLeaderContacts.length} LEADer-source contact${excludedLeaderContacts.length === 1 ? "" : "s"} excluded from scanned history before deduplication.`);
+  }
+  if (excludedUnknownContacts.length) {
+    warnings.push(`${excludedUnknownContacts.length} Unknown-source contact${excludedUnknownContacts.length === 1 ? "" : "s"} excluded from scanned history before deduplication.`);
   }
 
   const bookingDataAvailable = propertyResult.status !== "fulfilled"
@@ -329,8 +336,10 @@ async function liveReport(request, env) {
       historyRecordsScanned: fetchedContacts.length,
       excludedAhoyConnection,
       excludedLeader,
+      excludedUnknownSource,
       excludedAhoyConnectionHistory: excludedAhoyContacts.length,
       excludedLeaderHistory: excludedLeaderContacts.length,
+      excludedUnknownSourceHistory: excludedUnknownContacts.length,
     },
     mode: "live",
     range: { start, end },

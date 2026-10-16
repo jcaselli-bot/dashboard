@@ -88,6 +88,29 @@ export function isLeaderSourceContact(record, sourceProperties = [], propertyDef
   });
 }
 
+export function isUnknownSourceContact(record, sourceProperties = [], propertyDefinitions = {}, mappedSourceProperty = "") {
+  const props = record?.properties || {};
+  const propertyNames = [...new Set([
+    ...sourceProperties,
+    mappedSourceProperty,
+    "lead_source",
+    "leadsource",
+  ].filter(Boolean))];
+  const hasUnknownOption = propertyNames.some((propertyName) => {
+    const options = optionMap(propertyDefinitions[propertyName]);
+    // Read before clean(): it intentionally treats the literal "Unknown" as blank.
+    const values = String(props[propertyName] ?? "").split(";").map((value) => value.trim());
+    return values.some((value) => [value, options.get(value)].some((label) => (
+      /^(unknown|unknownsource)$/.test(String(label ?? "").toLowerCase().replace(/[^a-z0-9]+/g, ""))
+    )));
+  });
+  if (hasUnknownOption) return true;
+  // Only a blank mapped source renders as Unknown source; other source fields can be empty.
+  return Boolean(mappedSourceProperty && !clean(displayPropertyValue(
+    mappedSourceProperty, props[mappedSourceProperty], propertyDefinitions,
+  )));
+}
+
 export function normalizeEmail(value) {
   return clean(value).toLowerCase().replace(/^mailto:/, "");
 }

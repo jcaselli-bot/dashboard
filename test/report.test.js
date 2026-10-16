@@ -8,6 +8,7 @@ import {
   getScheduleSnapshot,
   isOfflineAhoyConnectionContact,
   isLeaderSourceContact,
+  isUnknownSourceContact,
   recommendMapping,
 } from "../src/report.js";
 
@@ -344,6 +345,34 @@ test("recognizes LEADer source labels and internal option values", () => {
   assert.equal(isLeaderSourceContact(contact(3, { lead_source:"81234" }), ["lead_source"], definitions), true);
   assert.equal(isLeaderSourceContact(contact(4, { lead_source:"55" }), ["lead_source"], definitions), false);
   assert.equal(isLeaderSourceContact(contact(5, { lead_source:"Leaderboard" }), ["lead_source"], definitions), false);
+});
+
+test("recognizes explicit Unknown source options before blank-value cleanup", () => {
+  const definitions = {
+    lead_source:{ options:[
+      { value:"901", label:"Unknown" },
+      { value:"902", label:"Unknown source" },
+      { value:"55", label:"Referral" },
+    ] },
+  };
+  for (const value of ["Unknown", " unknown ", "Unknown source", "UNKNOWN_SOURCE", "901", "902", "55;901"]) {
+    assert.equal(isUnknownSourceContact(contact(1, { lead_source:value }), ["lead_source"], definitions), true, value);
+  }
+  for (const value of ["55", "Referral", "Unknown supplier", "Unknown source campaign", "", null]) {
+    assert.equal(isUnknownSourceContact(contact(1, { lead_source:value }), ["lead_source"], definitions), false, String(value));
+  }
+  assert.equal(isUnknownSourceContact(contact(1, { source_detail:"Unknown" }), ["lead_source"], definitions), false);
+  assert.equal(isUnknownSourceContact(contact(1, { custom_source:"901" }), ["custom_source"], {
+    custom_source:definitions.lead_source,
+  }), true);
+});
+
+test("excludes a blank mapped source without excluding blank additional source fields", () => {
+  for (const value of ["", null, undefined, "Unknown", "n/a"]) {
+    assert.equal(isUnknownSourceContact(contact(1, { source:value }), ["source"], {}, "source"), true, String(value));
+  }
+  assert.equal(isUnknownSourceContact(contact(1, { source:"Referral", lead_source:"" }), ["source", "lead_source"], {}, "source"), false);
+  assert.equal(isUnknownSourceContact(contact(1, { source:"Referral", lead_source:"Unknown" }), ["source", "lead_source"], {}, "source"), true);
 });
 
 test("recommends Velocity's service and original traffic source fields", () => {

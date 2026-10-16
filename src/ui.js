@@ -422,7 +422,7 @@ export const DASHBOARD_HTML = `<!doctype html>
 
         <section class="settings-section">
           <div class="settings-title">Duplicate decision rule</div>
-          <div class="rule-box"><strong>Before the selected start date is applied:</strong> exclude Offline Sources / Ahoy-Connection and LEADer-source contacts, then group matching contacts across HubSpot history through the selected end date and retain the oldest create date. The retained row keeps the most recently updated nonblank service and appointment details from every duplicate.</div>
+          <div class="rule-box"><strong>Before the selected start date is applied:</strong> exclude Offline Sources / Ahoy-Connection, LEADer-source, and Unknown-source contacts (including a blank mapped Lead source), then group matching contacts across HubSpot history through the selected end date and retain the oldest create date. The retained row keeps the most recently updated nonblank service and appointment details from every duplicate.</div>
         </section>
 
         <section class="settings-section">
