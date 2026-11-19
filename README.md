@@ -7,6 +7,7 @@ A secure, read-only Cloudflare Worker dashboard for HubSpot contact reporting. I
 - the current HubSpot **Lifecycle stage** for each contact that entered Appointment Set during the selected range, normalized into Scheduled, Rescheduled, Completed, Canceled, No-show, Other / review, or Not scheduled;
 - lead and appointment performance by service;
 - lead source mix, owner, detailed records, filters, privacy masking, and CSV export;
+- a weekday/hour grid of unique new leads, with daily and hourly totals and busiest-time highlights in Eastern time;
 - an audit of every duplicate record removed;
 - missing contact information, missing service assignments, and scheduling statuses that need review.
 
@@ -23,6 +24,10 @@ Contacts are linked into a duplicate group when they have the same normalized em
 Duplicate grouping happens across HubSpot contact history through the selected end date **before** the selected start date is applied. If a contact created August 19 duplicates an original created August 18, an August 19-only report excludes that duplicate because the group's original create date is August 18.
 
 The duplicate audit shows the HubSpot ID that was retained and every ID that was suppressed. Consolidation happens only in the read-only dashboard response; the dashboard does not merge, delete, or edit anything in HubSpot.
+
+## When leads come in
+
+The weekday/hour grid uses each retained contact's original `createdAt`, converted to `America/New_York` (Eastern time, including daylight saving changes). It follows the selected create-date range, business line, lifecycle category, source, and search filters. Duplicate records and excluded sources do not add to the grid. Monday through Sunday are shown with 24 one-hour columns, daily/hourly totals, and busiest weekday/hour highlights; tied peaks are identified. Empty selections show an empty state, and invalid create dates are omitted instead of being assigned to midnight. The grid uses the already-loaded new-lead rows and makes no additional HubSpot API requests.
 
 ## Saved dashboard settings
 

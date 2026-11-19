@@ -1,3 +1,5 @@
+import { buildLeadTiming } from "./lead-timing.js";
+
 export const SETUP_HTML = `<!doctype html>
 <html lang="en">
 <head>
@@ -148,6 +150,39 @@ export const DASHBOARD_HTML = `<!doctype html>
     select.control { width:auto; min-width:155px; cursor:pointer; }
     .spacer { flex:1; }
     .count-chip { color:var(--muted); font-size:11px; white-space:nowrap; }
+    .lead-timing-panel { margin-bottom:12px; overflow:hidden; }
+    .timing-zone { padding:6px 9px; border:1px solid var(--border); border-radius:8px; color:var(--muted); font-size:10px; white-space:nowrap; }
+    .timing-highlights { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:4px 18px 18px; }
+    .timing-highlight { padding:13px 15px; border:1px solid var(--border-soft); border-radius:12px; background:rgba(7,18,31,.45); }
+    .timing-highlight-label { color:var(--muted); font-size:10px; }
+    .timing-highlight-value { margin-top:6px; color:var(--text); font-size:18px; font-weight:750; letter-spacing:-.025em; }
+    .timing-highlight-note { margin-top:4px; color:var(--muted-2); font-size:10px; }
+    .timing-scroll { overflow-x:auto; padding:0 12px 12px; }
+    .timing-scroll:focus-visible { outline:2px solid var(--cyan); outline-offset:-3px; }
+    .timing-table { width:100%; min-width:1010px; border-collapse:separate; border-spacing:4px; table-layout:fixed; }
+    .timing-table caption { height:1px; width:1px; overflow:hidden; position:absolute; clip-path:inset(50%); white-space:nowrap; }
+    .timing-table th { padding:6px 0; color:var(--muted); font-size:9px; font-weight:600; text-align:center; white-space:nowrap; }
+    .timing-table th:first-child { width:95px; text-align:left; padding-left:3px; }
+    .timing-table th:last-child { width:52px; }
+    .timing-table tbody th { font-size:11px; color:var(--text); }
+    .timing-cell { height:33px; text-align:center; border-radius:5px; font-size:10px; font-variant-numeric:tabular-nums; }
+    .timing-cell.level-0 { background:rgba(101,123,149,.075); color:var(--muted-2); }
+    .timing-cell.level-1 { background:rgba(57,198,216,.16); color:#bcecf1; }
+    .timing-cell.level-2 { background:rgba(57,198,216,.30); color:#d3f3f7; }
+    .timing-cell.level-3 { background:rgba(57,198,216,.48); color:#e1f8fa; }
+    .timing-cell.level-4 { background:rgba(57,198,216,.70); color:#07111f; font-weight:800; }
+    .timing-cell.level-5 { background:var(--cyan); color:#07111f; font-weight:850; }
+    .timing-cell:hover { outline:1px solid var(--cyan); outline-offset:1px; }
+    .timing-total { color:var(--text); text-align:center; font-size:10px; font-weight:750; font-variant-numeric:tabular-nums; }
+    .timing-table tfoot th, .timing-table tfoot td { padding-top:10px; border-top:1px solid var(--border); }
+    .timing-footer { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; padding:0 18px 18px; color:var(--muted-2); font-size:10px; line-height:1.5; }
+    .timing-legend { display:flex; align-items:center; gap:5px; white-space:nowrap; }
+    .timing-legend i { width:13px; height:13px; border-radius:3px; display:inline-block; }
+    .timing-legend i:nth-of-type(1) { background:rgba(57,198,216,.16); }
+    .timing-legend i:nth-of-type(2) { background:rgba(57,198,216,.30); }
+    .timing-legend i:nth-of-type(3) { background:rgba(57,198,216,.48); }
+    .timing-legend i:nth-of-type(4) { background:rgba(57,198,216,.70); }
+    .timing-legend i:nth-of-type(5) { background:var(--cyan); }
     .breakdown-grid { display:grid; grid-template-columns:minmax(0, 1.45fr) minmax(300px, .75fr); gap:12px; margin-bottom:12px; }
     .service-table { width:100%; border-collapse:collapse; }
     .service-table th { color:var(--muted-2); font-size:10px; text-transform:uppercase; letter-spacing:.08em; text-align:right; padding:8px 14px 11px; border-bottom:1px solid var(--border-soft); }
@@ -241,6 +276,7 @@ export const DASHBOARD_HTML = `<!doctype html>
       .date-input { flex:1; min-width:120px; }
       .kpis { grid-template-columns:1fr 1fr; }
       .segment-grid { grid-template-columns:1fr; }
+      .timing-highlights { grid-template-columns:1fr; }
       .kpi { min-height:116px; }
       .schedule-body { grid-template-columns:1fr; justify-items:center; }
       .status-list { width:100%; }
@@ -339,6 +375,19 @@ export const DASHBOARD_HTML = `<!doctype html>
         <select class="control" id="source-filter" aria-label="Filter by lead source"><option value="">All sources</option></select>
         <span class="count-chip" id="filtered-count">—</span>
         <button class="btn" id="export-btn" type="button">Export CSV</button>
+      </section>
+
+      <section class="panel lead-timing-panel" aria-labelledby="lead-timing-title">
+        <div class="panel-head">
+          <div><h2 class="panel-title" id="lead-timing-title">When leads come in</h2><div class="panel-sub" id="lead-timing-sub">New leads by original create date, after exclusions and deduplication</div></div>
+          <span class="timing-zone">Eastern time (ET)</span>
+        </div>
+        <div class="timing-highlights" id="lead-timing-highlights"></div>
+        <div class="timing-scroll" id="lead-timing-chart" role="region" aria-label="Lead counts by weekday and hour; scroll horizontally to see all hours" tabindex="0"><div class="empty">Loading lead timing…</div></div>
+        <div class="timing-footer">
+          <span id="lead-timing-note">Each column is one hour, starting at the time shown. Uses the selected date range and filters.</span>
+          <span class="timing-legend" aria-label="Brighter cells indicate more leads">Fewer <i></i><i></i><i></i><i></i><i></i> More</span>
+        </div>
       </section>
 
       <section class="breakdown-grid">
@@ -446,6 +495,7 @@ export const DASHBOARD_HTML = `<!doctype html>
       };
       var STORAGE_KEY = "velocity-lead-dashboard-settings-v2";
       var PAGE_SIZE = 25;
+      var buildLeadTiming = ${buildLeadTiming.toString()};
       var state = {
         bootstrap:null,
         report:null,
@@ -765,6 +815,42 @@ export const DASHBOARD_HTML = `<!doctype html>
         }).join("");
       }
 
+      function renderLeadTiming(rows) {
+        var timing = buildLeadTiming(rows);
+        var missingNote = timing.missingCreatedDate ? " · " + number.format(timing.missingCreatedDate) + " without a valid create date omitted" : "";
+        $("#lead-timing-sub").textContent = number.format(timing.total) + " unique new lead" + (timing.total === 1 ? "" : "s") + " · Current date range and filters" + missingNote;
+        function hourRange(hour) {
+          return timing.hours[hour].label + "–" + timing.hours[(hour + 1) % 24].label;
+        }
+        function highlight(label, items, countKey, valueLabel) {
+          var max = Math.max.apply(null, items.map(function (item) { return item[countKey]; }).concat([0]));
+          var tied = items.filter(function (item) { return item[countKey] === max; });
+          var value = max ? tied.slice(0, 2).map(valueLabel).join(" / ") + (tied.length > 2 ? " + " + (tied.length - 2) + " tied" : "") : "No leads";
+          var note = max ? number.format(max) + " lead" + (max === 1 ? "" : "s") + (tied.length > 1 ? " each" : "") + " · " + percent(max / timing.total) + " of leads" : "No new leads match the current selection";
+          return '<div class="timing-highlight"><div class="timing-highlight-label">' + label + '</div><div class="timing-highlight-value">' + escapeHtml(value) + '</div><div class="timing-highlight-note">' + escapeHtml(note) + '</div></div>';
+        }
+        $("#lead-timing-highlights").innerHTML = highlight("Busiest weekday", timing.days, "total", function (day) { return day.day; }) + highlight("Busiest hour", timing.hours, "count", function (hour) { return hourRange(hour.hour); });
+        if (!timing.total) {
+          $("#lead-timing-chart").innerHTML = '<div class="empty">No new leads match the selected date range and filters.</div>';
+          return;
+        }
+        var max = Math.max.apply(null, timing.days.reduce(function (counts, day) { return counts.concat(day.hours); }, []).concat([1]));
+        var header = '<thead><tr><th scope="col">Day / hour</th>' + timing.hours.map(function (hour) {
+          return '<th scope="col">' + hour.label + '</th>';
+        }).join("") + '<th scope="col">Total</th></tr></thead>';
+        var body = '<tbody>' + timing.days.map(function (day) {
+          return '<tr><th scope="row">' + day.day + '</th>' + day.hours.map(function (count, hour) {
+            var level = count ? Math.max(1, Math.ceil(count / max * 5)) : 0;
+            var title = day.day + ", " + hourRange(hour) + ": " + number.format(count) + " lead" + (count === 1 ? "" : "s");
+            return '<td class="timing-cell level-' + level + '" title="' + escapeHtml(title) + '" aria-label="' + escapeHtml(title) + '">' + (count ? number.format(count) : '<span aria-hidden="true">–</span>') + '</td>';
+          }).join("") + '<td class="timing-total">' + number.format(day.total) + '</td></tr>';
+        }).join("") + '</tbody>';
+        var footer = '<tfoot><tr><th scope="row">Hourly total</th>' + timing.hours.map(function (hour) {
+          return '<td class="timing-total">' + number.format(hour.count) + '</td>';
+        }).join("") + '<td class="timing-total">' + number.format(timing.total) + '</td></tr></tfoot>';
+        $("#lead-timing-chart").innerHTML = '<table class="timing-table" aria-describedby="lead-timing-note"><caption>Unique new leads by weekday and hour in Eastern time</caption>' + header + body + footer + '</table>';
+      }
+
       function renderSegmentCards(segments) {
         $("#segment-cards").innerHTML = segments.map(function (item) {
           var className = item.segment.toLowerCase();
@@ -926,6 +1012,7 @@ export const DASHBOARD_HTML = `<!doctype html>
         var bookingRows = filteredBookingRows();
         var metrics = aggregate(rows, bookingRows);
         renderKpis(rows, metrics);
+        renderLeadTiming(rows);
         renderSegmentCards(metrics.segments);
         renderTrend(rows, bookingRows);
         renderSchedule(metrics);

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import worker from "../src/index.js";
 import { DASHBOARD_HTML } from "../src/ui.js";
 import { APPOINTMENT_SET_DATE_PROPERTY } from "../src/report.js";
+import { buildLeadTiming } from "../src/lead-timing.js";
 
 test("excludes Unknown sources before deduplication and both appointment totals", async (t) => {
   const sourceOptions = [
@@ -77,6 +78,7 @@ test("excludes Unknown sources before deduplication and both appointment totals"
   assert.equal(report.summary.duplicatesRemoved, 0);
   assert.equal(report.duplicateAudit.length, 0);
   assert.ok(report.warnings.some((warning) => /6 Unknown-source contacts/.test(warning)));
+  assert.equal(buildLeadTiming(report.rows).total, 2, "timing only includes new leads after source exclusions");
 });
 
 test("serves the dashboard and demo report without external credentials", async () => {
@@ -88,6 +90,9 @@ test("serves the dashboard and demo report without external credentials", async 
   assert.match(pageHtml, /Appointments set from new leads/);
   assert.match(pageHtml, /Appointments set in range/);
   assert.match(pageHtml, /Date entered Appointment Set in range/);
+  assert.match(pageHtml, /When leads come in/);
+  assert.match(pageHtml, /Eastern time \(ET\)/);
+  assert.match(pageHtml, /function buildLeadTiming\(/);
   assert.doesNotMatch(pageHtml, /New leads with appointment date|Appointments dated in range|Booked from new leads|New-lead booking rate|Total booked in range/);
   assert.doesNotMatch(pageHtml, /pat-na1-/);
 
